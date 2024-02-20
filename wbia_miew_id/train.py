@@ -31,7 +31,7 @@ def parse_args():
 
 def run(config):
     checkpoint_dir = f"{config.checkpoint_dir}/{config.project_name}/{config.exp_name}"
-    os.makedirs(checkpoint_dir, exist_ok=False)
+    os.makedirs(checkpoint_dir, exist_ok=True)
     print('Checkpoints will be saved at: ', checkpoint_dir)
 
     config_path_out = f'{checkpoint_dir}/{config.exp_name}.yaml'
@@ -104,6 +104,41 @@ def run(config):
 
         crop_bbox = False
 
+    from torch.utils.data import Sampler
+
+    class SpeciesSampler(Sampler):
+        def __init__(self, data_source, batch_size):
+            self.data_source = data_source
+            self.batch_size = batch_size
+            self.species_to_indices = self._group_indices_by_species()
+
+        def _group_indices_by_species(self):
+            # Assuming 'data_source' has an attribute 'csv' which is a DataFrame containing 'species'
+            species_to_indices = {}
+            for idx, row in enumerate(self.data_source.csv.itertuples()):
+                species = getattr(row, 'species')
+                if species not in species_to_indices:
+                    species_to_indices[species] = []
+                species_to_indices[species].append(idx)
+            return species_to_indices
+
+        def __iter__(self):
+            indices = []
+            for species, idxs in self.species_to_indices.items():
+                # Optionally shuffle idxs here if you want randomness within each species group
+                np.random.shuffle(idxs)
+                # Group indices by batch_size
+                batched_idxs = [idxs[i:i + self.batch_size] for i in range(0, len(idxs), self.batch_size)]
+                indices.extend(batched_idxs)
+            # Shuffle batches to ensure randomness across species
+            np.random.shuffle(indices)
+            for batch in indices:
+                yield batch
+
+        def __len__(self):
+            return sum(len(indices) // self.batch_size for indices in self.species_to_indices.values())
+
+
     train_dataset = MiewIdDataset(
         csv=df_train,
         transforms=get_train_transforms(config),
@@ -120,22 +155,38 @@ def run(config):
         crop_bbox=crop_bbox,
     )
         
+    # train_loader = torch.utils.data.DataLoader(
+    #     train_dataset,
+    #     batch_size=config.engine.train_batch_size,
+    #     num_workers=config.engine.num_workers,
+    #     shuffle=True,
+    #     pin_memory=True,
+    #     drop_last=True,
+    # )
+
+    # valid_loader = torch.utils.data.DataLoader(
+    #     valid_dataset,
+    #     batch_size=config.engine.valid_batch_size,
+    #     num_workers=config.engine.num_workers,
+    #     shuffle=False,
+    #     pin_memory=True,
+    #     drop_last=False,
+    # )
+    train_sampler = SpeciesSampler(train_dataset, batch_size=config.engine.train_batch_size)
+    valid_sampler = SpeciesSampler(valid_dataset, batch_size=config.engine.valid_batch_size)
+
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
-        batch_size=config.engine.train_batch_size,
+        batch_sampler=train_sampler,
         num_workers=config.engine.num_workers,
-        shuffle=True,
         pin_memory=True,
-        drop_last=True,
     )
 
     valid_loader = torch.utils.data.DataLoader(
         valid_dataset,
-        batch_size=config.engine.valid_batch_size,
+        batch_sampler=valid_sampler,
         num_workers=config.engine.num_workers,
-        shuffle=False,
         pin_memory=True,
-        drop_last=False,
     )
 
     device = torch.device(config.engine.device)

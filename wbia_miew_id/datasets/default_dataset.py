@@ -29,6 +29,8 @@ class MiewIdDataset(Dataset):
         bbox = row['bbox']
         theta = row['theta'] if row['theta'] is not None else 0
 
+        species = row['species'] # if row['species'] is not None else 'unknown'
+
         # if self.crop_bbox:
         #     x1, y1, w, h = [int(x) for x in bbox]
         #     image = image[y1 : y1 + h, x1 : x1 + w]
@@ -61,4 +63,5 @@ class MiewIdDataset(Dataset):
         
         return {"image": image, "label":torch.tensor(row['name']), 
                 "image_idx": self.csv.index[index], "file_path": image_path, "bbox": torch.Tensor(bbox),
-                'theta': theta}
+                'theta': theta, 'species': species}
+    
