@@ -1,3 +1,11 @@
+import argparse
+import os
+import random
+import numpy as np
+import torch
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data.distributed import DistributedSampler
 from datasets import MiewIdDataset, get_train_transforms, get_valid_transforms
 from logging_utils import WandbContext
 from models import MiewIdNet
@@ -8,31 +16,36 @@ from engine import run_fn
 from helpers import get_config, write_config
 from torch.optim.swa_utils import AveragedModel, SWALR
 
-import os
-import torch
-import random
-import numpy as np
-from dotenv import load_dotenv
-
-import argparse
-
-# os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
-# os.environ['TORCH_USE_CUDA_DSA'] = "1"
-
 def parse_args():
     parser = argparse.ArgumentParser(description="Load configuration file.")
-    parser.add_argument(
-        '--config',
-        type=str,
-        default='configs/default_config.yaml',
-        help='Path to the YAML configuration file. Default: configs/default_config.yaml'
-    )
+    parser.add_argument('--config', type=str, default='configs/default_config.yaml',
+                        help='Path to the YAML configuration file. Default: configs/default_config.yaml')
     return parser.parse_args()
 
-def run(config):
+def setup(rank, world_size):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    torch.cuda.set_device(rank)
+
+def cleanup():
+    dist.destroy_process_group()
+
+def set_seed_torch(seed):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # For multi-gpu
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+def run(rank, world_size, config):
+
     checkpoint_dir = f"{config.checkpoint_dir}/{config.project_name}/{config.exp_name}"
-    os.makedirs(checkpoint_dir, exist_ok=False)
-    print('Checkpoints will be saved at: ', checkpoint_dir)
+    if rank == 0:
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        print('Checkpoints will be saved at: ', checkpoint_dir)
 
     config_path_out = f'{checkpoint_dir}/{config.exp_name}.yaml'
     config.data.test.checkpoint_path = f'{checkpoint_dir}/model_best.bin'
@@ -72,6 +85,7 @@ def run(config):
     n_train_classes = df_train['name'].nunique()
 
     crop_bbox = config.data.crop_bbox
+    
     # if config.data.preprocess_images.force_apply:
     #     preprocess_dir_images = os.path.join(checkpoint_dir, 'images')
     #     preprocess_dir_train = os.path.join(preprocess_dir_images, 'train')
@@ -103,7 +117,14 @@ def run(config):
         df_val = load_preprocessed_mapping(df_val, preprocess_dir_images)
 
         crop_bbox = False
-
+    setup(rank, world_size)
+    
+    set_seed_torch(config.engine.seed)
+    
+    # Assume preprocess_data and other etl functions are compatible with DDP or are not necessary to run in each process
+    # Make sure preprocess_data and similar functions are called before spawning processes if they're not compatible with DDP
+    
+    # Dataset preparation
     train_dataset = MiewIdDataset(
         csv=df_train,
         transforms=get_train_transforms(config),
@@ -119,53 +140,32 @@ def run(config):
         fliplr_view=config.test.fliplr_view,
         crop_bbox=crop_bbox,
     )
-        
+    
+    train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank)
+    valid_sampler = DistributedSampler(valid_dataset, num_replicas=world_size, rank=rank, shuffle=False)
+    
     train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=config.engine.train_batch_size,
-        num_workers=config.engine.num_workers,
-        shuffle=True,
-        pin_memory=True,
-        drop_last=True,
+        train_dataset, batch_size=config.engine.train_batch_size, sampler=train_sampler,
+        num_workers=config.engine.num_workers, pin_memory=True, drop_last=True,
     )
 
     valid_loader = torch.utils.data.DataLoader(
-        valid_dataset,
-        batch_size=config.engine.valid_batch_size,
-        num_workers=config.engine.num_workers,
-        shuffle=False,
-        pin_memory=True,
-        drop_last=False,
+        valid_dataset, batch_size=config.engine.valid_batch_size, sampler=valid_sampler,
+        num_workers=config.engine.num_workers, pin_memory=True, drop_last=False,
     )
 
-    device = torch.device(config.engine.device)
-
-    if config.model_params.n_classes != n_train_classes:
-        print(f"WARNING: Overriding n_classes in config ({config.model_params.n_classes}) which is different from actual n_train_classes in the dataset - ({n_train_classes}).")
-        config.model_params.n_classes = n_train_classes
-
-    if config.model_params.loss_module == 'arcface_subcenter_dynamic':
-        margin_min = 0.2
-        margin_max = config.model_params.margin #0.5
-        tmp = np.sqrt(1 / np.sqrt(df_train['name'].value_counts().sort_index().values))
-        margins = (tmp - tmp.min()) / (tmp.max() - tmp.min()) * (margin_max - margin_min) + margin_min
-    else:
-        margins = None
-
-    model = MiewIdNet(**dict(config.model_params), margins=margins)
-    model.to(device)
-
-    criterion = fetch_loss()
-    criterion.to(device)
-        
-
+    # Model setup
+    model = MiewIdNet(**dict(config.model_params))
+    model.to(rank)
+    model = DDP(model, device_ids=[rank])
+    
+    # Loss, optimizer, scheduler, and SWA setup
+    criterion = fetch_loss().to(rank)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.scheduler_params.lr_start)
-
-    scheduler = MiewIdScheduler(optimizer,**dict(config.scheduler_params))
-
+    scheduler = MiewIdScheduler(optimizer, **dict(config.scheduler_params))
     if config.engine.use_swa:
-        swa_model = AveragedModel(model)
-        swa_model.to(device)
+        swa_model = AveragedModel(model.module) if isinstance(model, DDP) else AveragedModel(model)
+        swa_model.to(rank)
         swa_scheduler = SWALR(optimizer=optimizer, swa_lr=config.swa_params.swa_lr)
         swa_start = config.swa_params.swa_start
     else:
@@ -173,19 +173,21 @@ def run(config):
         swa_scheduler = None
         swa_start = None
 
-    write_config(config, config_path_out)
-
-
-    with WandbContext(config):
-        best_score = run_fn(config, model, train_loader, valid_loader, criterion, optimizer, scheduler, device, checkpoint_dir, use_wandb=config.engine.use_wandb,
-            swa_model=swa_model, swa_scheduler=swa_scheduler, swa_start=swa_start)
-
-    return best_score
+    # Training loop
+    if rank == 0:
+        with WandbContext(config):
+            best_score = run_fn(rank, config, model, train_loader, valid_loader, criterion, optimizer, scheduler, rank, checkpoint_dir,
+                                use_wandb=config.engine.use_wandb, swa_model=swa_model, swa_scheduler=swa_scheduler, swa_start=swa_start)
+    else:
+        best_score = run_fn(rank, config, model, train_loader, valid_loader, criterion, optimizer, scheduler, rank, checkpoint_dir,
+                            use_wandb=False, swa_model=swa_model, swa_scheduler=swa_scheduler, swa_start=swa_start)
+    
+    cleanup()
 
 if __name__ == '__main__':
     args = parse_args()
     config_path = args.config
-    
     config = get_config(config_path)
 
-    run(config)
+    world_size = torch.cuda.device_count()
+    torch.multiprocessing.spawn(run, args=(world_size, config,), nprocs=world_size, join=True)

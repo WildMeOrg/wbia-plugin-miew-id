@@ -30,7 +30,7 @@ def train_fn(dataloader, model, criterion, optimizer, device, scheduler, epoch, 
 
     if swa_model and epoch > swa_start:
         print("Updating swa model...")
-        swa_model.update_parameters(model)
+        swa_model.update_parameters(model.module)
         swa_scheduler.step()
     else:
         scheduler.step()

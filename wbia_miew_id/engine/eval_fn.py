@@ -17,7 +17,7 @@ def extract_embeddings(data_loader, model, device):
     with torch.no_grad():
         for batch in tk0:
             with autocast():
-                batch_embeddings = model.extract_feat(batch["image"].to(device))
+                batch_embeddings = model.module.extract_feat(batch["image"].to(device))
             
             batch_embeddings = batch_embeddings.detach().cpu().numpy()
             

@@ -13,5 +13,17 @@ wbia_miew_id/configs/*
 *.csv
 *.db
 *.png
+<<<<<<< Updated upstream
+<<<<<<< Updated upstream
 wbia_miew_id/splits/
 wbia_miew_id/helpers/split/configs/config_*.yaml
+=======
+wbia_miew_id/ms_face-loa-configs/
+wbia_miew_id/ms_face-singles-configs/
+wbia_miew_id/splits/
+>>>>>>> Stashed changes
+=======
+wbia_miew_id/ms_face-loa-configs/
+wbia_miew_id/ms_face-singles-configs/
+wbia_miew_id/splits/
+>>>>>>> Stashed changes
