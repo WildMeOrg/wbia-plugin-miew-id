@@ -10,7 +10,7 @@ def load_json(file_path):
         data = json.load(f)
     return data
 
-def load_to_df(anno_path):
+def load_json_to_df(anno_path):
     data = load_json(anno_path)
 
     dfa = pd.DataFrame(data['annotations'])
@@ -27,6 +27,12 @@ def load_to_df(anno_path):
 
     print(f'** Loaded {anno_path} **')
     print('     ', f'Found {len(df)} annotations')
+
+    return df
+
+def load_to_df(anno_path):
+    df = pd.read_csv(anno_path)
+    df['bbox'] = df[['x', 'y', 'w', 'h']].values.tolist()
 
     return df
 
@@ -67,8 +73,12 @@ def filter_df(df, viewpoint_list, n_filter_min, n_subsample_max, filter_key='nam
 
 def preprocess_data(anno_path, name_keys=['name'], convert_names_to_ids=True, viewpoint_list=None, n_filter_min=None, n_subsample_max=None, use_full_image_path=False, images_dir=None):
 
-    df = load_to_df(anno_path)
-
+    if anno_path.lower().endswith('json'):
+        df = load_json_to_df(anno_path)
+    elif anno_path.lower().endswith('csv'):
+        df = load_to_df(anno_path)
+    else:
+        raise NotImplementedError("Annotation file extension not supported.")
 
     df['name'] = df[name_keys].apply(lambda row: '_'.join(row.values.astype(str)), axis=1)
 
@@ -77,6 +87,7 @@ def preprocess_data(anno_path, name_keys=['name'], convert_names_to_ids=True, vi
         df['name_species'] = df['name'] + '_' + df['species']
         filter_key = 'name_species'
     else:
+        df['species'] = 'default_species'
         filter_key = 'name'
 
     df['name_orig'] = df['name'].copy()

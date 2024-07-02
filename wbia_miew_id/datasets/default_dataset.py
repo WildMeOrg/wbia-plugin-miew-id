@@ -9,13 +9,14 @@ import random
 
 
 class MiewIdDataset(Dataset):
-    def __init__(self, csv, transforms=None, fliplr=False, fliplr_view=[], crop_bbox=False):
+    def __init__(self, csv, transforms=None, fliplr=False, fliplr_view=[], crop_bbox=False, n_train_classes=None):
 
         self.csv = csv#.reset_index()
         self.augmentations = transforms
         self.fliplr = fliplr
         self.fliplr_view = fliplr_view
         self.crop_bbox = crop_bbox
+        self.n_train_classes = n_train_classes
 
     def __len__(self):
         return self.csv.shape[0]

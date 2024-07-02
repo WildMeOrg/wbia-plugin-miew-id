@@ -34,31 +34,45 @@ def parse_args():
 def objective(trial, config):
 
     # Specify the parameters you want to optimize
-    config.data.train.n_filter_min = trial.suggest_int("train.n_filter_min", 3, 5)
-    # image_size = 256 #trial.suggest_categorical("image_size", [192, 256, 384, 440, 512])
-    image_size = 256 #trial.suggest_categorical("image_size", [192, 256, 384, 440, 512])
-    loss_module = trial.suggest_categorical("loss_module", ['arcface_subcenter_dynamic', 'arcface'])
-    config.model_params.loss_module = loss_module
-    # config.data.image_size = [image_size, image_size]
-    n_epochs = 20#trial.suggest_int("epochs", 20, 40)
+
+    image_size = 440 #trial.suggest_categorical("image_size", [192, 256, 384, 440, 512])
+    n_epochs = 25#trial.suggest_int("epochs", 20, 40)
     config.engine.epochs = n_epochs
+
+    # if trial.number > 0:
+
+    # loss_module = trial.suggest_categorical("loss_module", ['arcface_subcenter_dynamic', 'elastic_arcface'])
+    # config.model_params.loss_module = loss_module
+    # config.data.image_size = [image_size, image_size]
+    # Specify the parameters you want to optimize
+    # config.data.train.n_filter_min = trial.suggest_int("train.n_filter_min", 3, 5)
+    # image_size = 256 #trial.suggest_categorical("image_size", [192, 256, 384, 440, 512])
+
     config.model_params.s = trial.suggest_uniform("s", 30, 64)
-    if config.model_params.loss_module == 'arcface':
+    if config.model_params.loss_module == 'elastic_arcface':
         config.model_params.margin = trial.suggest_uniform("margin", 0.3, 0.7)
     if config.model_params.loss_module == 'arcface_subcenter_dynamic':
         config.model_params.k = trial.suggest_int("k", 2, 4)
 
     # The scheduler params are derived from one base paremeter to minimize the number of parameters to optimzie
-    lr_base = trial.suggest_loguniform("lr_base", 1e-5, 1e-3)
-    config.scheduler_params.lr_start = lr_base / 10
-    config.scheduler_params.lr_max = lr_base * 10
-    config.scheduler_params.lr_min = lr_base / 20
+    # lr_base = trial.suggest_loguniform("lr_base", 1e-5, 1e-3)
+    # config.scheduler_params.lr_start = lr_base / 100
+    # config.scheduler_params.lr_max = lr_base * 10
+    # config.scheduler_params.lr_min = lr_base / 100
 
-    # SWA parameters to test
-    config.engine.use_swa = trial.suggest_categorical("use_swa", [False, True])
-    if config.engine.use_swa:
-        config.swa_params.swa_lr = trial.suggest_loguniform("swa_lr", 0.0001, 0.05)
-        config.swa_params.swa_start = trial.suggest_int("swa_start", 20, 25)
+    lr_start = trial.suggest_loguniform("lr_start", 1e-7, 1e-4)
+    config.scheduler_params.lr_start = lr_start 
+    lr_max = trial.suggest_loguniform("lr_max", 5e-5, 1e-3)
+    config.scheduler_params.lr_max = lr_max
+    lr_min = trial.suggest_loguniform("lr_min", 1e-7, 1e-4)
+    config.scheduler_params.lr_min = lr_min
+
+    # # SWA parameters to test
+    # config.engine.use_swa = trial.suggest_categorical("use_swa", [False, True])
+    # if config.engine.use_swa:
+    #     config.swa_params.swa_lr = trial.suggest_loguniform("swa_lr", 0.0001, 0.05)
+    #     config.swa_params.swa_start = trial.suggest_int("swa_start", 20, 25)
+
 
     print("trial number: ", trial.number)
     print("config: ", dict(config))
@@ -68,13 +82,21 @@ def objective(trial, config):
     else:
         config.exp_name = config.exp_name + f"_t{trial.number}"
 
-
-    try:
-        result = run(config)
-    except Exception as e:
-        print("Exception occured: ", e)
-        print(trial)
-        result = 0
+    if trial.number == 0:
+        return 0.738
+    if trial.number == 1:
+        return 0.59
+    if trial.number == 2:
+        return 0.7422174440141309
+    if trial.number == 3:
+        return 0.7422935392772942
+    else:
+        try:
+            result = run(config)
+        except Exception as e:
+            print("Exception occured: ", e)
+            print(trial)
+            result = 0
 
     return result
 
@@ -104,6 +126,42 @@ if __name__ == "__main__":
         study_name=study_name, storage=study_storage,
         sampler=study_sampler, pruner=MedianPruner(), direction="maximize", load_if_exists=True
     )
+
+    study.enqueue_trial({
+        's': 49.32675426153405,
+        'margin': 0.32841442327915477,
+        'k': 2,
+        'lr_start': 0.00000341898067433194,
+        'lr_max': 0.001,
+        'lr_min': 0.000002
+        })
+    
+    study.enqueue_trial({
+        's': 48.65965913352904,
+        'margin': 0.32841442327915477,
+        'k': 4,
+        'lr_start': 0.00000643117205013199,
+        'lr_max': 0.00000643117205013199,
+        'lr_min': 0.00000643117205013199
+    })
+
+    study.enqueue_trial({
+        's': 48.65965913352904,
+        'margin': 0.32841442327915477,
+        'k': 4,
+        'lr_start': 0.00000643117205013199,
+        'lr_max': 0.0002557875307967728,
+        'lr_min': 0.0000018662266976518
+    })
+
+    study.enqueue_trial({
+        's': 51.960399844266306,
+        'margin': 0.32841442327915477,
+        'k': 3,
+        'lr_start': 0.0000473498930449948,
+        'lr_max': 0.000896858981000587,
+        'lr_min': 0.00000141359355517523
+    })
 
     comb_objective = lambda trial: objective(trial, config)
 

@@ -476,7 +476,7 @@ def _load_data(ibs, aid_list, config, multithread=False):
     Load data, preprocess and create data loaders
     """
 
-    test_transform = get_test_transforms(config)
+    test_transform = get_test_transforms((config.data.image_size[0], config.data.image_size[1]))
     image_paths = ibs.get_annot_image_paths(aid_list)
     bboxes = ibs.get_annot_bboxes(aid_list)
     names = ibs.get_annot_name_rowids(aid_list)

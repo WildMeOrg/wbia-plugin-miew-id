@@ -55,14 +55,8 @@ class MiewIdNet(nn.Module):
                  use_fc=False,
                  fc_dim=512,
                  dropout=0.0,
-                 loss_module='softmax',
-                 s=30.0,
-                 margin=0.50,
-                 ls_eps=0.0,
-                 theta_zero=0.785,
                  pretrained=True,
-                 margins=None,
-                 k=None):
+                 **kwargs):
         """
         """
         super(MiewIdNet, self).__init__()
@@ -75,6 +69,8 @@ class MiewIdNet(nn.Module):
             final_in_features = self.backbone.classifier.in_features
         if model_name.startswith('swinv2'):
             final_in_features = self.backbone.norm.normalized_shape[0]
+
+        self.final_in_features = final_in_features
         
         self.backbone.classifier = nn.Identity()
         self.backbone.global_pool = nn.Identity()
@@ -91,26 +87,6 @@ class MiewIdNet(nn.Module):
             self.fc.apply(weights_init_classifier)
             final_in_features = fc_dim
 
-        self.loss_module = loss_module
-        if loss_module == 'arcface':
-            self.final = ElasticArcFace(final_in_features, n_classes,
-                                          s=s, m=margin)
-        elif loss_module == 'arcface_subcenter_dynamic':
-            if margins is None:
-                margins = [0.3] * n_classes
-            self.final = ArcFaceSubCenterDynamic(
-                embedding_dim=final_in_features, 
-                output_classes=n_classes, 
-                margins=margins,
-                s=s,
-                k=k )
-        # elif loss_module == 'cosface':
-        #     self.final = AddMarginProduct(final_in_features, n_classes, s=s, m=margin)
-        # elif loss_module == 'adacos':
-        #     self.final = AdaCos(final_in_features, n_classes, m=margin, theta_zero=theta_zero)
-        else:
-            self.final = nn.Linear(final_in_features, n_classes)
-
     def _init_params(self):
         nn.init.xavier_normal_(self.fc.weight)
         nn.init.constant_(self.fc.bias, 0)
@@ -119,16 +95,8 @@ class MiewIdNet(nn.Module):
 
     def forward(self, x, label=None):
         feature = self.extract_feat(x)
-        if not self.training:
-            return feature
-        else:
-            assert label is not None
-        if self.loss_module in ('arcface', 'arcface_subcenter_dynamic'):
-            logits = self.final(feature, label)
-        else:
-            logits = self.final(feature)
-
-        return logits
+        
+        return feature
 
     def extract_feat(self, x):
         batch_size = x.shape[0]
@@ -144,13 +112,3 @@ class MiewIdNet(nn.Module):
             x1 = self.fc(x1)
     
         return x
-
-    def extract_logits(self, x, label=None):
-        feature = self.extract_feat(x)
-        assert label is not None
-        if self.loss_module in ('arcface', 'arcface_subcenter_dynamic'):
-            logits = self.final(feature, label)
-        else:
-            logits = self.final(feature)
-        
-        return logits

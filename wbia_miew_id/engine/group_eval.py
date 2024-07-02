@@ -4,7 +4,8 @@ from datasets import MiewIdDataset, get_test_transforms
 from .eval_fn import eval_fn, log_results
 from etl import filter_min_names_df, subsample_max_df, preprocess_data
 
-def group_eval(config, df_test, eval_groups, model):
+
+def group_eval(df_test, eval_groups, model, n_filter_min, n_subsample_max, image_size, fliplr, fliplr_view, crop_bbox, valid_batch_size, device):
 
     print("** Calculating groupwise evaluation scores **")
 
@@ -13,30 +14,28 @@ def group_eval(config, df_test, eval_groups, model):
         for group, df_group in df_test.groupby(eval_group):
             try:
                 print('* Evaluating group:', group)
-                n_filter_min = config.data.test.n_filter_min
                 if n_filter_min:
                     print(len(df_group))
                     df_group = filter_min_names_df(df_group, n_filter_min)
-                n_subsample_max = config.data.test.n_subsample_max
                 if n_subsample_max:
                     df_group = subsample_max_df(df_group, n_subsample_max)
                 test_dataset = MiewIdDataset(
                     csv=df_group,
-                    transforms=get_test_transforms(config),
-                    fliplr=config.test.fliplr,
-                    fliplr_view=config.test.fliplr_view,
-                    crop_bbox=config.data.crop_bbox,
+                    transforms=get_test_transforms((image_size[0], image_size[1])),
+                    fliplr=fliplr,
+                    fliplr_view=fliplr_view,
+                    crop_bbox=crop_bbox,
                 )
                     
                 test_loader = torch.utils.data.DataLoader(
                     test_dataset,
-                    batch_size=config.engine.valid_batch_size,
+                    batch_size=valid_batch_size,
                     num_workers=0,
                     shuffle=False,
                     pin_memory=True,
                     drop_last=False,
                 )
-                device = torch.device(config.engine.device)
+                device = torch.device(device)
                 test_score, test_cmc, test_outputs = eval_fn(test_loader, model, device, use_wandb=False, return_outputs=True)
             except Exception as E:
                 print('* Could not evaluate group:', group)
@@ -49,6 +48,7 @@ def group_eval(config, df_test, eval_groups, model):
 
     return group_results
 
+
 def group_eval_fn(config, eval_groups, model, use_wandb=True):
     print('Evaluating on groups')
     df_test_group = preprocess_data(config.data.test.anno_path, 
@@ -60,6 +60,15 @@ def group_eval_fn(config, eval_groups, model, use_wandb=True):
                         use_full_image_path=config.data.use_full_image_path,
                         images_dir = config.data.images_dir)
     group_results = group_eval(config, df_test_group, eval_groups, model)
+    group_results = group_eval(eval_groups, df_test_group, model,
+        n_filter_min = config.data.test.n_filter_min, 
+        n_subsample_max = config.data.test.n_subsample_max, 
+        image_size = (config.data.image_size[0], config.data.image_size[1]), 
+        fliplr = config.test.fliplr, 
+        fliplr_view = config.test.fliplr_view, 
+        crop_bbox = config.data.crop_bbox, 
+        valid_batch_size = config.data.valid_batch_size, 
+        device = config.engine.device)
 
     group_scores = []
     group_cmcs = []

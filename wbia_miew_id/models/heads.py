@@ -57,8 +57,10 @@ def l2_norm(input, axis = 1):
     output = torch.div(input, norm)
 
     return output
+    
 class ElasticArcFace(nn.Module):
-    def __init__(self, in_features, out_features, s=64.0, m=0.50,std=0.0125,plus=False, k=None):
+
+    def __init__(self, loss_fn, in_features, out_features, s=64.0, m=0.50,std=0.0125,plus=False, k=None):
         super(ElasticArcFace, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -66,8 +68,10 @@ class ElasticArcFace(nn.Module):
         self.m = m
         self.kernel = nn.Parameter(torch.FloatTensor(in_features, out_features))
         nn.init.normal_(self.kernel, std=0.01)
-        self.std=std
-        self.plus=plus
+        self.std = std
+        self.plus = plus
+        self.loss_fn = loss_fn
+
     def forward(self, embbedings, label):
         embbedings = l2_norm(embbedings, axis=1)
         kernel_norm = l2_norm(self.kernel, axis=0)
@@ -87,7 +91,10 @@ class ElasticArcFace(nn.Module):
         cos_theta.acos_()
         cos_theta[index] += m_hot
         cos_theta.cos_().mul_(self.s)
-        return cos_theta
+    
+        loss = self.loss_fn(cos_theta, label)
+
+        return loss
     
 ########## Subcenter Arcface with dynamic margin ##########
 
@@ -112,7 +119,6 @@ class ArcMarginProduct_subcenter(nn.Module):
 class ArcFaceLossAdaptiveMargin(nn.modules.Module):
     def __init__(self, margins, out_dim, s):
         super().__init__()
-#         self.crit = nn.CrossEntropyLoss()
         self.s = s
         self.register_buffer('margins', torch.tensor(margins))
         self.out_dim = out_dim
@@ -137,6 +143,7 @@ class ArcFaceLossAdaptiveMargin(nn.modules.Module):
 class ArcFaceSubCenterDynamic(nn.Module):
     def __init__(
         self,
+        loss_fn,
         embedding_dim,
         output_classes,
         margins,
@@ -155,7 +162,10 @@ class ArcFaceSubCenterDynamic(nn.Module):
                                                          out_dim=self.output_classes, 
                                                          s=self.s)
 
+        self.loss_fn = loss_fn
+
     def forward(self, features, labels):
         logits = self.wmetric_classify(features.float())
         logits = self.warcface_margin(logits, labels)
-        return logits
+        loss = self.loss_fn(logits, labels)
+        return loss

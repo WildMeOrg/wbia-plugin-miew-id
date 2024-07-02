@@ -5,7 +5,6 @@ import numpy as np
 import wandb
 
 from metrics import AverageMeter, compute_distance_matrix, compute_calibration, eval_onevsall, topk_average_precision, precision_at_k, get_accuracy
-from helpers.swatools import extract_outputs
 from torch.cuda.amp import autocast  
 
 def extract_embeddings(data_loader, model, device):
