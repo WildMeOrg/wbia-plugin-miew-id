@@ -31,7 +31,7 @@ class Evaluator:
     def __init__(self, device, seed, model_params, checkpoint_path, anno_path, 
                  name_keys, viewpoint_list, use_full_image_path, images_dir, image_size,
                  crop_bbox, valid_batch_size, num_workers, eval_groups, 
-                 fliplr, fliplr_view, n_filter_min, n_subsample_max, visualize=False):
+                 fliplr, fliplr_view, n_filter_min, n_subsample_max, visualize=False, visualization_output_dir='miewid_visualizations'):
         self.device = device
         self.visualize = visualize
         self.seed = seed
@@ -51,6 +51,7 @@ class Evaluator:
         self.fliplr_view = fliplr_view
         self.n_filter_min = n_filter_min
         self.n_subsample_max = n_subsample_max
+        self.visualization_output_dir = visualization_output_dir
 
         self.set_seed_torch(seed)
         self.model = self.load_model(device, model_params, checkpoint_path)
@@ -83,7 +84,7 @@ class Evaluator:
 
     @staticmethod
     def preprocess_test_data(anno_path, name_keys, viewpoint_list, use_full_image_path, 
-                             images_dir, crop_bbox, valid_batch_size, num_workers, 
+                             images_dir, image_size, crop_bbox, valid_batch_size, num_workers, 
                              fliplr, fliplr_view, n_filter_min, n_subsample_max):
         df_test = preprocess_data(
             anno_path, 
@@ -98,7 +99,7 @@ class Evaluator:
         
         test_dataset = MiewIdDataset(
             csv=df_test,
-            transforms=get_test_transforms((config.data.image_size[0], config.data.image_size[1])),
+            transforms=get_test_transforms((image_size[0], image_size[1])),
             fliplr=fliplr,
             fliplr_view=fliplr_view,
             crop_bbox=crop_bbox,
@@ -119,7 +120,7 @@ class Evaluator:
     def evaluate_groups(self, eval_groups, anno_path, name_keys, viewpoint_list, 
                         use_full_image_path, images_dir, model):
         df_test_group = preprocess_data(
-            anno_path, 
+            anno_path,
             name_keys=name_keys,
             convert_names_to_ids=True, 
             viewpoint_list=viewpoint_list, 
@@ -139,17 +140,18 @@ class Evaluator:
         device = self.device)
 
     @staticmethod
-    def visualize_results(test_outputs, df_test, test_dataset, model, k=5):
+    def visualize_results(test_outputs, df_test, test_dataset, model, device, k=5, valid_batch_size=2, output_dir='miewid_visualizations'):
         embeddings, q_pids, distmat = test_outputs
         ranks = list(range(1, k+1))
         score, match_mat, topk_idx, topk_names = precision_at_k(q_pids, distmat, ranks=ranks, return_matches=True)
         match_results = (q_pids, topk_idx, topk_names, match_mat)
-        render_query_results(model, test_dataset, df_test, match_results, k=k)
+        render_query_results(model, test_dataset, df_test, match_results, device,
+                             k=k, valid_batch_size=valid_batch_size, output_dir=output_dir)
 
     def evaluate(self):
         test_loader, df_test = self.preprocess_test_data(
             self.anno_path, self.name_keys, self.viewpoint_list, 
-            self.use_full_image_path, self.images_dir, self.crop_bbox, 
+            self.use_full_image_path, self.images_dir, self.image_size, self.crop_bbox, 
             self.valid_batch_size, self.num_workers, self.fliplr, 
             self.fliplr_view, self.n_filter_min, self.n_subsample_max
         )
@@ -163,13 +165,16 @@ class Evaluator:
             )
 
         if self.visualize:
-            self.visualize_results(test_outputs, df_test, test_loader.dataset, self.model)
+            self.visualize_results(test_outputs, df_test, test_loader.dataset, self.model, self.device,
+                                  k=5, valid_batch_size=self.valid_batch_size,output_dir=self.visualization_output_dir )
 
         return test_score
 
 if __name__ == '__main__':
     args = parse_args()
     config = get_config(args.config)
+
+    visualization_output_dir = f"{config.checkpoint_dir}/{config.project_name}/{config.exp_name}/visualizations"
 
     evaluator = Evaluator(
         device=torch.device(config.engine.device),
@@ -190,7 +195,10 @@ if __name__ == '__main__':
         fliplr_view=config.test.fliplr_view,
         n_filter_min=config.data.test.n_filter_min,
         n_subsample_max=config.data.test.n_subsample_max,
-        visualize=args.visualize
+        visualize=args.visualize,
+        visualization_output_dir=visualization_output_dir
     )
 
     evaluator.evaluate()
+
+

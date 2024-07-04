@@ -43,13 +43,13 @@ def stack_match_images(images, descriptions, match_mask, text_color=(0, 0, 0)): 
 
     return result
 
-def render_single_query_result(config, model, vis_loader, df_vis, qry_row, qry_idx, vis_match_mask, k=5):
+def render_single_query_result(model, vis_loader, df_vis, qry_row, qry_idx, vis_match_mask, device, output_dir, k=5):
     
     
-    use_cuda = False if config.engine.device in ['mps', 'cpu'] else True
+    use_cuda = False if device in ['mps', 'cpu'] else True
 
     batch_images = draw_batch(
-        config, vis_loader,  model, images_dir = 'dev_test', method='gradcam_plus_plus', eigen_smooth=False, 
+        device, vis_loader,  model, images_dir = 'dev_test', method='gradcam_plus_plus', eigen_smooth=False, 
         render_transformed=True, show=False, use_cuda=use_cuda)
 
     viewpoints = df_vis['viewpoint'].values
@@ -65,7 +65,6 @@ def render_single_query_result(config, model, vis_loader, df_vis, qry_row, qry_i
 
     vis_result = stack_match_images(batch_images, descriptions, vis_match_mask)
 
-    output_dir = f"{config.checkpoint_dir}/{config.project_name}/{config.exp_name}/visualizations"
     output_name = f"vis_{qry_name}_{qry_viewpoint}_{qry_loc_idx}_top{k}.jpg"
     output_path = os.path.join(output_dir, output_name)
 
@@ -74,9 +73,12 @@ def render_single_query_result(config, model, vis_loader, df_vis, qry_row, qry_i
 
     print(f"Saved visualization to {output_path}")
 
-def render_query_results(config, model, test_dataset, df_test, match_results, k=5):
+def render_query_results(model, test_dataset, df_test, match_results, device, k=5,
+                        valid_batch_size=2, output_dir='miewid_visualizations'):
 
     q_pids, topk_idx, topk_names, match_mat = match_results
+
+    os.path.makedirs(output_dir, exist_ok=True)
 
     print("Generating visualizations...")
     for i in tqdm(range(len(q_pids))):
@@ -95,7 +97,7 @@ def render_query_results(config, model, test_dataset, df_test, match_results, k=
 
         vis_loader = torch.utils.data.DataLoader(
                 test_dataset,
-                batch_size=config.engine.valid_batch_size,
+                batch_size=valid_batch_size,
                 num_workers=0,
                 shuffle=False,
                 pin_memory=True,
@@ -103,4 +105,4 @@ def render_query_results(config, model, test_dataset, df_test, match_results, k=
                 sampler = idxSampler
             )
         
-        render_single_query_result(config, model, vis_loader, df_vis, qry_row, qry_idx, vis_match_mask, k=k)
+        render_single_query_result(model, vis_loader, df_vis, qry_row, qry_idx, vis_match_mask, device, output_dir, k=k)

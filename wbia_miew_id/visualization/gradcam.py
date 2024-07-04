@@ -172,7 +172,7 @@ def draw_one(config, test_loader, model, images_dir = '', method='gradcam_plus_p
     comb_image = cv2.cvtColor(comb_image, cv2.COLOR_BGR2RGB)
     return comb_image
 
-def generate_embeddings(config, model, test_loader):
+def generate_embeddings(device, model, test_loader):
     print('generating embeddings')
     tk0 = tqdm(test_loader, total=len(test_loader))
     embeddings = []
@@ -199,7 +199,7 @@ def generate_embeddings(config, model, test_loader):
 
 
             images.extend(batch_image)
-            batch_embeddings = model(batch_image.to(config.engine.device))
+            batch_embeddings = model(batch_image.to(device))
             
             batch_embeddings = batch_embeddings.detach().cpu().numpy()
             
@@ -221,14 +221,14 @@ def generate_embeddings(config, model, test_loader):
     embeddings = pd.concat(embeddings)
     return embeddings, labels, images, paths, bboxes, thetas
 
-def draw_batch(config, test_loader, model, images_dir = '', method='hires_cam', eigen_smooth=False, render_transformed=False, show=False, use_cuda=True):
+def draw_batch(device, test_loader, model, images_dir = '', method='hires_cam', eigen_smooth=False, render_transformed=False, show=False, use_cuda=True):
 
     print('** draw_batch started')
 
     # Generate embeddings for query and db
     model.eval()
 
-    embeddings, labels, images, paths, bboxes, thetas = generate_embeddings(config, model, test_loader)
+    embeddings, labels, images, paths, bboxes, thetas = generate_embeddings(device, model, test_loader)
 
     print('*** embeddings generated ***')
 
@@ -247,10 +247,10 @@ def draw_batch(config, test_loader, model, images_dir = '', method='hires_cam', 
     db_idx = 1
 
     qry_features = embeddings.iloc[qry_idx].values
-    qry_features = torch.Tensor(qry_features).to(config.engine.device)
+    qry_features = torch.Tensor(qry_features).to(device)
 
     db_features_batch = embeddings.iloc[db_idx:].values
-    db_features_batch = torch.Tensor(db_features_batch).to(config.engine.device)
+    db_features_batch = torch.Tensor(db_features_batch).to(device)
 
     tensors = []
     stack_target = []    
