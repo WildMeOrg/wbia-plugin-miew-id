@@ -4,8 +4,8 @@ import pandas as pd
 from PIL import Image
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm.auto import tqdm
-from datasets import get_chip_from_img
-from etl import preprocess_data
+from wbia_miew_id.datasets import get_chip_from_img
+from wbia_miew_id.etl import preprocess_data
 from torchvision import transforms
 
 def process_image(row, crop_bbox, preprocess_dir, chip_idx, target_size):

@@ -1,11 +1,11 @@
-from datasets import MiewIdDataset, get_train_transforms, get_valid_transforms, get_test_transforms
-from logging_utils import WandbContext
-from models import MiewIdNet
-from etl import preprocess_data, print_basic_stats
-from engine import eval_fn, group_eval
-from helpers import get_config
-from visualization import render_query_results
-from metrics import precision_at_k
+from wbia_miew_id.datasets import MiewIdDataset, get_train_transforms, get_valid_transforms, get_test_transforms
+from wbia_miew_id.logging_utils import WandbContext
+from wbia_miew_id.models import MiewIdNet
+from wbia_miew_id.etl import preprocess_data, print_basic_stats
+from wbia_miew_id.engine import eval_fn, group_eval_run
+from wbia_miew_id.helpers import get_config
+from wbia_miew_id.visualization import render_query_results
+from wbia_miew_id.metrics import precision_at_k
 
 import os
 import torch
@@ -129,7 +129,7 @@ class Evaluator:
             use_full_image_path=use_full_image_path,
             images_dir=images_dir
         )
-        group_results = group_eval(df_test_group, eval_groups, model,
+        group_results = group_eval_run(df_test_group, eval_groups, model,
         n_filter_min = self.n_filter_min, 
         n_subsample_max = self.n_subsample_max, 
         image_size = self.image_size, 

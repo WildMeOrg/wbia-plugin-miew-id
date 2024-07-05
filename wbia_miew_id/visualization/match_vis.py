@@ -78,7 +78,7 @@ def render_query_results(model, test_dataset, df_test, match_results, device, k=
 
     q_pids, topk_idx, topk_names, match_mat = match_results
 
-    os.path.makedirs(output_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     print("Generating visualizations...")
     for i in tqdm(range(len(q_pids))):

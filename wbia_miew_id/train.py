@@ -1,15 +1,13 @@
-# train.py
-from datasets import MiewIdDataset, get_train_transforms, get_valid_transforms
-from logging_utils import WandbContext
-from models import MiewIdNet
-from models import ArcMarginProduct, ElasticArcFace, ArcFaceSubCenterDynamic
+from wbia_miew_id.logging_utils import WandbContext
+from wbia_miew_id.etl import preprocess_data, print_intersect_stats, load_preprocessed_mapping, preprocess_dataset
+from wbia_miew_id.losses import fetch_loss
+from wbia_miew_id.schedulers import MiewIdScheduler
+from wbia_miew_id.helpers import get_config, write_config, update_bn
+from wbia_miew_id.metrics import AverageMeter, compute_calibration
+from wbia_miew_id.datasets import MiewIdDataset, get_train_transforms, get_valid_transforms
+from wbia_miew_id.models import ArcMarginProduct, ElasticArcFace, ArcFaceSubCenterDynamic, MiewIdNet
+from wbia_miew_id.engine import train_fn, eval_fn, group_eval_fn
 
-from etl import preprocess_data, print_intersect_stats, load_preprocessed_mapping, preprocess_dataset
-from losses import fetch_loss
-from schedulers import MiewIdScheduler
-from helpers import get_config, write_config
-from helpers.swatools import update_bn
-from metrics import AverageMeter, compute_calibration
 
 from torch.optim.swa_utils import AveragedModel, SWALR
 import torch
@@ -21,8 +19,6 @@ import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
 import wandb
 
-# Import train_fn and eval_fn
-from engine import train_fn, eval_fn, group_eval_fn
 
 class Trainer:
     def __init__(self, config):

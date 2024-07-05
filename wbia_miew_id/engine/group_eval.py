@@ -1,11 +1,11 @@
 import torch
 import numpy as np
-from datasets import MiewIdDataset, get_test_transforms
-from .eval_fn import eval_fn, log_results
-from etl import filter_min_names_df, subsample_max_df, preprocess_data
+from wbia_miew_id.datasets import MiewIdDataset, get_test_transforms
+from wbia_miew_id.engine import eval_fn, log_results
+from wbia_miew_id.etl import filter_min_names_df, subsample_max_df, preprocess_data
 
 
-def group_eval(df_test, eval_groups, model, n_filter_min, n_subsample_max, image_size, fliplr, fliplr_view, crop_bbox, valid_batch_size, device):
+def group_eval_run(df_test, eval_groups, model, n_filter_min, n_subsample_max, image_size, fliplr, fliplr_view, crop_bbox, valid_batch_size, device):
 
     print("** Calculating groupwise evaluation scores **")
 
@@ -59,15 +59,14 @@ def group_eval_fn(config, eval_groups, model, use_wandb=True):
                         n_subsample_max=None,
                         use_full_image_path=config.data.use_full_image_path,
                         images_dir = config.data.images_dir)
-    group_results = group_eval(config, df_test_group, eval_groups, model)
-    group_results = group_eval(eval_groups, df_test_group, model,
+    group_results = group_eval_run(df_test_group, eval_groups, model,
         n_filter_min = config.data.test.n_filter_min, 
         n_subsample_max = config.data.test.n_subsample_max, 
         image_size = (config.data.image_size[0], config.data.image_size[1]), 
         fliplr = config.test.fliplr, 
         fliplr_view = config.test.fliplr_view, 
         crop_bbox = config.data.crop_bbox, 
-        valid_batch_size = config.data.valid_batch_size, 
+        valid_batch_size = config.engine.valid_batch_size, 
         device = config.engine.device)
 
     group_scores = []

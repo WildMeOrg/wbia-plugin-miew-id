@@ -2,7 +2,7 @@ import torch
 import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
 import wandb
-from metrics import AverageMeter, compute_calibration
+from wbia_miew_id.metrics import AverageMeter, compute_calibration
 
 
 def train_fn(dataloader, model, criterion, optimizer, device, scheduler, epoch, use_wandb=True, swa_model=None, swa_start=None, swa_scheduler=None):
