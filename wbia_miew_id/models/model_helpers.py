@@ -12,7 +12,7 @@ def get_model(cfg, checkpoint_path=None, use_gpu=True):
         model.to(device)
 
     if checkpoint_path:
-        model.load_state_dict(torch.load(checkpoint_path))
+        model.load_state_dict(torch.load(checkpoint_path), strict=False)
         print('loaded checkpoint from', checkpoint_path)
 
     return model
