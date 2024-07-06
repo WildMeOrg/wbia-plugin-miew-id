@@ -177,3 +177,51 @@ def write_config(config: Config, file_path: str):
     config_dict = dict(config)
     with open(file_path, 'w') as file:
         yaml.dump(config_dict, file)
+
+def yaml_to_formatted_string(file_path):
+    """
+    Convert a YAML file to a formatted string.
+    
+    Args:
+    file_path (str): The path to the YAML file.
+    
+    Returns:
+    str: A formatted string representation of the YAML data.
+    """
+    try:
+        # Read the YAML file
+        with open(file_path, 'r') as file:
+            data = yaml.safe_load(file)
+        # Convert the dictionary to a formatted string
+        formatted_str = yaml.dump(data, sort_keys=False, default_flow_style=False)
+        return formatted_str
+    except FileNotFoundError:
+        return f"Error: File not found - {file_path}"
+    except yaml.YAMLError as e:
+        return f"Error parsing YAML: {e}"
+
+def formatted_string_to_yaml(formatted_str, output_path):
+    """
+    Convert a formatted string to a YAML string and write it to a file.
+    
+    Args:
+    formatted_str (str): A formatted string representation of data.
+    output_path (str): The path where the YAML file will be saved.
+    
+    Returns:
+    str: A message indicating success or failure.
+    """
+    try:
+        # Load the formatted string into a Python dictionary
+        data = yaml.safe_load(formatted_str)
+        # Convert the dictionary back to a YAML string
+        yaml_str = yaml.dump(data, sort_keys=False, default_flow_style=False)
+        # Write the YAML string to the specified output file
+        with open(output_path, 'w') as file:
+            file.write(yaml_str)
+        return f"YAML successfully written to {output_path}"
+    except yaml.YAMLError as e:
+        return f"Error parsing formatted string: {e}"
+    except IOError as e:
+        return f"Error writing to file: {e}"
+

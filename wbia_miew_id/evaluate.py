@@ -28,10 +28,9 @@ def parse_args():
     return parser.parse_args()
 
 class Evaluator:
-    def __init__(self, device, seed, model_params, checkpoint_path, anno_path, 
-                 name_keys, viewpoint_list, use_full_image_path, images_dir, image_size,
-                 crop_bbox, valid_batch_size, num_workers, eval_groups, 
-                 fliplr, fliplr_view, n_filter_min, n_subsample_max, visualize=False, visualization_output_dir='miewid_visualizations'):
+    def __init__(self, device, seed, anno_path, name_keys, viewpoint_list, use_full_image_path, images_dir, image_size,
+                 crop_bbox, valid_batch_size, num_workers, eval_groups, fliplr, fliplr_view, n_filter_min, n_subsample_max,
+                 model_params=None, checkpoint_path=None, model=None, visualize=False, visualization_output_dir='miewid_visualizations'):
         self.device = device
         self.visualize = visualize
         self.seed = seed
@@ -54,7 +53,11 @@ class Evaluator:
         self.visualization_output_dir = visualization_output_dir
 
         self.set_seed_torch(seed)
-        self.model = self.load_model(device, model_params, checkpoint_path)
+        
+        if model is not None:
+            self.model = model.to(device)
+        else:
+            self.model = self.load_model(device, model_params, checkpoint_path)
     
     @staticmethod
     def set_seed_torch(seed):
@@ -71,7 +74,6 @@ class Evaluator:
         model.to(device)
         
         if checkpoint_path:
-            print('loading checkpoint from', checkpoint_path)
             weights = torch.load(checkpoint_path, map_location=device)
             n_train_classes = weights[list(weights.keys())[-1]].shape[-1]
             if model_params['n_classes'] != n_train_classes:
@@ -175,30 +177,29 @@ if __name__ == '__main__':
     config = get_config(args.config)
 
     visualization_output_dir = f"{config.checkpoint_dir}/{config.project_name}/{config.exp_name}/visualizations"
-
+    
     evaluator = Evaluator(
-        device=torch.device(config.engine.device),
-        seed=config.engine.seed,
-        model_params=dict(config.model_params),
-        checkpoint_path=config.data.test.checkpoint_path,
-        anno_path=config.data.test.anno_path,
-        name_keys=config.data.name_keys,
-        viewpoint_list=config.data.viewpoint_list,
-        use_full_image_path=config.data.use_full_image_path,
-        images_dir=config.data.images_dir,
-        image_size=(config.data.image_size[0], config.data.image_size[1]),
-        crop_bbox=config.data.crop_bbox,
-        valid_batch_size=config.engine.valid_batch_size,
-        num_workers=config.engine.num_workers,
-        eval_groups=config.data.test.eval_groups,
-        fliplr=config.test.fliplr,
-        fliplr_view=config.test.fliplr_view,
-        n_filter_min=config.data.test.n_filter_min,
-        n_subsample_max=config.data.test.n_subsample_max,
-        visualize=args.visualize,
-        visualization_output_dir=visualization_output_dir
-    )
-
+    device=torch.device(config.engine.device),
+    seed=config.engine.seed,
+    anno_path=config.data.test.anno_path,
+    name_keys=config.data.name_keys,
+    viewpoint_list=config.data.viewpoint_list,
+    use_full_image_path=config.data.use_full_image_path,
+    images_dir=config.data.images_dir,
+    image_size=(config.data.image_size[0], config.data.image_size[1]),
+    crop_bbox=config.data.crop_bbox,
+    valid_batch_size=config.engine.valid_batch_size,
+    num_workers=config.engine.num_workers,
+    eval_groups=config.data.test.eval_groups,
+    fliplr=config.test.fliplr,
+    fliplr_view=config.test.fliplr_view,
+    n_filter_min=config.data.test.n_filter_min,
+    n_subsample_max=config.data.test.n_subsample_max,
+    model_params=dict(config.model_params),
+    checkpoint_path=config.data.test.checkpoint_path,
+    model=None,
+    visualize=args.visualize,
+    visualization_output_dir=visualization_output_dir
+)
+    
     evaluator.evaluate()
-
-
