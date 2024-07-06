@@ -9,7 +9,6 @@ A plugin for matching and interpreting embeddings for wildlife identification.
 ``` 
 pip install -r requirements.txt
 pip install -e .
-
 ```
 
 Optionally, these environment variables must be set to enable Weights and Biases logging
