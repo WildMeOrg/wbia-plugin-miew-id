@@ -1,17 +1,19 @@
+import torch
 from tqdm import tqdm
-from pairx.core import explain
-from pairx.xai_dataset import get_pretransform_img
+import cv2
+import torchvision.transforms as transforms
+from PIL import Image
+import numpy as np
+
+from .pairx.core import explain
+from .pairx.xai_dataset import get_pretransform_img
+from .helpers import get_chip_from_img, load_image
 
 
 def draw_one(
-    config,
+    device,
     test_loader,
     model,
-    images_dir="",
-    method="gradcam_plus_plus",
-    eigen_smooth=False,
-    show=False,
-    use_cuda=True,
     visualization_type="lines_and_colors",
     layer_key="backbone.blocks.3",
     k_lines=20,
@@ -21,14 +23,9 @@ def draw_one(
     Generates a PAIR-X explanation for the provided images and model.
 
     Args:
-        config: Config object containing device (accessed as config.engine.device).
+        device (str or torch.device): Device to use (cuda or cpu).
         test_loader (DataLoader): Should contain two images, with 4 items for each (image, name, path, bbox as xywh).
         model (torch.nn.Module or equivalent): The deep metric learning model.
-        images_dir: ignored
-        method: ignored
-        eigen_smooth: ignored
-        show: ignored
-        use_cuda: ignored
         visualization_type (str): The part of the PAIR-X visualization to return, selected from "lines_and_colors" (default), "only_lines", and "only_colors".
         layer_keys (str): The key of the intermediate layer to be used for explanation. Defaults to 'backbone.blocks.3'.
         k_lines (int, optional): The number of matches to visualize as lines. Defaults to 20.
@@ -44,17 +41,36 @@ def draw_one(
         "only_colors",
     ), "unsupported visualization type"
 
-    # get transformed and untransformed images out of test_loader
     transformed_images = []
     pretransform_images = []
 
+    # get transformed and untransformed images out of test_loader
     for batch in test_loader:
-        transformed_image, _, path, bbox = batch
+        try:
+            transformed_image, _, path, bbox, theta = batch[:5]
+        except:
+            transformed_image = batch["image"]
+            path = batch["file_path"]
+            bbox = batch["bbox"]
+            theta = batch["theta"]
 
-        transformed_images.append(transformed_image.to(config.engine.device))
+        if len(transformed_image.shape) == 3:
+            transformed_image = transformed_image.unsqueeze(0)
+
+        transformed_images.append(transformed_image.to(device))
 
         img_size = tuple(transformed_image.shape[-2:])
-        pretransform_image = get_pretransform_img(path, img_size, bbox)
+        pretransform_image = load_image(path)
+
+        if test_loader.crop_bbox:
+            pretransform_image = get_chip_from_img(pretransform_image, bbox, theta)
+
+        if test_loader.fliplr:
+            viewpoint = batch["viewpoint"]
+            if viewpoint in test_loader.fliplr_view:
+                pretransform_image = torch.from_numpy(np.fliplr(pretransform_image).copy())
+
+        pretransform_image = np.array(transforms.Resize(img_size)(Image.fromarray(pretransform_image)))
         pretransform_images.append(pretransform_image)
 
     img_0, img_1 = transformed_images

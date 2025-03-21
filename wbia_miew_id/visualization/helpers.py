@@ -103,3 +103,8 @@ def get_chip_from_img(img, bbox, theta):
         cropped_image = img
 
     return cropped_image
+
+def load_image(image_path):
+    image = cv2.imread(image_path)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    return image
