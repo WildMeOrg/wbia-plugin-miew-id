@@ -2,18 +2,21 @@ from tqdm import tqdm
 from pairx.core import explain
 from pairx.xai_dataset import get_pretransform_img
 
-def draw_one(config,
-             test_loader,
-             model,
-             images_dir = '',
-             method='gradcam_plus_plus',
-             eigen_smooth=False,
-             show=False,
-             use_cuda=True,
-             visualization_type="lines_and_colors",
-             layer_key="backbone.blocks.3",
-             k_lines=20,
-             k_colors=10):
+
+def draw_one(
+    config,
+    test_loader,
+    model,
+    images_dir="",
+    method="gradcam_plus_plus",
+    eigen_smooth=False,
+    show=False,
+    use_cuda=True,
+    visualization_type="lines_and_colors",
+    layer_key="backbone.blocks.3",
+    k_lines=20,
+    k_colors=10,
+):
     """
     Generates a PAIR-X explanation for the provided images and model.
 
@@ -35,7 +38,11 @@ def draw_one(config,
         numpy.ndarray: PAIR-X visualization of type visualization_type.
     """
     assert len(test_loader) == 2, "test_loader should only contain two images"
-    assert visualization_type in ("lines_and_colors", "only_lines", "only_colors"), "unsupported visualization type"
+    assert visualization_type in (
+        "lines_and_colors",
+        "only_lines",
+        "only_colors",
+    ), "unsupported visualization type"
 
     # get transformed and untransformed images out of test_loader
     transformed_images = []
@@ -49,7 +56,7 @@ def draw_one(config,
         img_size = tuple(transformed_image.shape[-2:])
         pretransform_image = get_pretransform_img(path, img_size, bbox)
         pretransform_images.append(pretransform_image)
-    
+
     img_0, img_1 = transformed_images
     img_np_0, img_np_1 = pretransform_images
 
@@ -59,7 +66,16 @@ def draw_one(config,
 
     # generate explanation image and return
     model.eval()
-    pairx_img = explain(img_0, img_1, img_np_0, img_np_1, model, [layer_key], k_lines=k_lines, k_colors=k_colors)
+    pairx_img = explain(
+        img_0,
+        img_1,
+        img_np_0,
+        img_np_1,
+        model,
+        [layer_key],
+        k_lines=k_lines,
+        k_colors=k_colors,
+    )
 
     pairx_height = pairx_img.shape[0] // 2
 
@@ -69,5 +85,3 @@ def draw_one(config,
         return pairx_img[pairx_height:]
 
     return pairx_img
-
-
