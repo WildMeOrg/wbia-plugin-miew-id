@@ -1,0 +1,4 @@
+[submodule "wbia_miew_id/visualization/pairx"]
+	path = wbia_miew_id/visualization/pairx
+	url = https://github.com/pairx-explains/pairx.git
+	branch = dev-branch
