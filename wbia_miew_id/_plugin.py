@@ -23,6 +23,7 @@ from wbia_miew_id.models import get_model
 from wbia_miew_id.datasets import PluginDataset, get_test_transforms
 from wbia_miew_id.metrics import pred_light, compute_distance_matrix, eval_onevsall
 from wbia_miew_id.visualization import draw_batch
+from wbia_miew_id.visualization.pairx_draw import draw_one as draw_one_pairx
 
 
 (print, rrr, profile) = ut.inject2(__name__)
@@ -272,31 +273,57 @@ class MiewIdRequest(dt.base.VsOneSimilarityRequest):
         chips = ibs.get_annot_chips(aid_list)
         return chips
 
-    def render_single_result(request, cm, aid, **kwargs):
-        # Returns match images side-by-side without activation overlay
+    def render_with_visualization(request, cm, aid, **kwargs):
+        depc = request.depc
+        ibs = depc.controller
+
+        species = ibs.get_annot_species_texts(aid)
+        model, config, (model_url, config_url) = read_config_and_load_model(species)
+
+        aid_list = [cm.qaid, aid]
+        test_loader, test_dataset = _load_data(ibs, aid_list, config, batch_size=1)
+
+        out_image = draw_one_pairx(
+            config.engine.device,
+            test_loader,
+            model,
+            config.data.crop_bbox,
+            visualization_type="lines_and_colors",
+            layer_key="backbone.blocks.3",
+            k_lines=20,
+            k_colors=10,
+        )
+        return out_image
+
+    def render_without_visualization(request, cm, aid, **kwargs):
         overlay = kwargs.get('draw_fmatches')
         chips = request.get_fmatch_overlayed_chip(
             [cm.qaid, aid], overlay=overlay, config=request.config
         )
-        out_image = vt.stack_image_list(chips)
+        return vt.stack_image_list(chips)
 
-        return out_image
+    def render_single_result(request, cm, aid, **kwargs):
+        use_gradcam = kwargs.get('use_gradcam', False)
+        if use_gradcam:
+            return request.render_with_visualization(cm, aid, **kwargs)
+        else:
+            return request.render_without_visualization(cm, aid, **kwargs)
 
-    def render_batch_result(request, cm, aids):
+    # def render_batch_result(request, cm, aids):
 
-        depc = request.depc
-        ibs = depc.controller
+    #     depc = request.depc
+    #     ibs = depc.controller
 
-        # Load config
-        species = ibs.get_annot_species_texts(aids)[0]
-        model, config, (model_url, config_url) = read_config_and_load_model(species)
-        # This list has to be in the format of [query_aid, db_aid]
-        aid_list = np.concatenate(([cm.qaid],  aids))
-        test_loader, test_dataset = _load_data(ibs, aid_list, config)
+    #     # Load config
+    #     species = ibs.get_annot_species_texts(aids)[0]
+    #     model, config, (model_url, config_url) = read_config_and_load_model(species)
+    #     # This list has to be in the format of [query_aid, db_aid]
+    #     aid_list = np.concatenate(([cm.qaid],  aids))
+    #     test_loader, test_dataset = _load_data(ibs, aid_list, config)
 
-        batch_images = draw_batch(config, test_loader,  model, images_dir = '', method='gradcam_plus_plus', eigen_smooth=False, show=False)
+    #     batch_images = draw_batch(config, test_loader,  model, images_dir = '', method='gradcam_plus_plus', eigen_smooth=False, show=False)
 
-        return batch_images
+    #     return batch_images
     
     def postprocess_execute(request, table, parent_rowids, rowids, result_list):
         qaid_list, daid_list = list(zip(*parent_rowids))
