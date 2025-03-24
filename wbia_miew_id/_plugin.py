@@ -418,14 +418,6 @@ def _load_model(config, model_url, use_dataparallel=True):
     r"""
     Load a model based on config file
     """
-    # print('Building model: {}'.format(config.model.name))
-    # model = build_model(
-    #     name=config.model.name,
-    #     num_classes=config.model.num_train_classes,
-    #     loss=config.loss.name,
-    #     pretrained=config.model.pretrained,
-    #     use_gpu=config.use_gpu,
-    # )
 
     # Download the model weights
     model_fname = model_url.split('/')[-1]
@@ -437,17 +429,12 @@ def _load_model(config, model_url, use_dataparallel=True):
 
     model = get_model(config, model_path)
 
-    # if config.use_gpu:
-    #    model.load_state_dict(torch.load(model_path))
-    # else:
-    #    model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
-    # print('Loaded model from {}'.format(model_path))
     if config.use_gpu and use_dataparallel:
         model = torch.nn.DataParallel(model).cuda()
     return model
 
 
-def _load_data(ibs, aid_list, config, multithread=False):
+def _load_data(ibs, aid_list, config, multithread=False, batch_size=None):
     r"""
     Load data, preprocess and create data loaders
     """
@@ -478,9 +465,11 @@ def _load_data(ibs, aid_list, config, multithread=False):
     else:
         num_workers = 0
 
+    batch_size = batch_size if batch_size is not None else config.test.batch_size
+
     dataloader = torch.utils.data.DataLoader(
         dataset,
-        batch_size=config.test.batch_size,
+        batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
         pin_memory=True,
@@ -640,9 +629,6 @@ def miew_id_new_accuracy(ibs, aid_list, min_sights=3, max_sights=10):
     return accuracy
 
 
-# The following functions are comiew_idd from TBD v1 because these functions
-# are agnostic tot eh method of computing embeddings:
-# https://github.com/WildMeOrg/wbia-plugin-miew_id/wbia_miew_id/_plugin.py
 def _db_labels_for_miew_id(ibs, daid_list):
     db_labels = ibs.get_annot_name_texts(daid_list, distinguish_unknowns=True)
     # db_auuids = ibs.get_annot_name_rowids(daid_list)
@@ -654,14 +640,6 @@ def _db_labels_for_miew_id(ibs, daid_list):
     db_labels = np.array(db_labels)
     return db_labels
 
-
-
-# def distance_to_score(distance, norm=2.0):
-#     # score = 1 / (1 + distance)
-#     score = np.exp(-distance / norm)
-#     return score
-
-# for cosine distance
 def distance_to_score(distance):
     score = (2 - distance) / 2
     score = np.float64(score)

@@ -14,6 +14,7 @@ def draw_one(
     device,
     test_loader,
     model,
+    crop_bbox,
     visualization_type="lines_and_colors",
     layer_key="backbone.blocks.3",
     k_lines=20,
@@ -34,6 +35,7 @@ def draw_one(
     Returns:
         numpy.ndarray: PAIR-X visualization of type visualization_type.
     """
+    assert test_loader.batch_size == 1, "test_loader should have a batch size of 1"
     assert len(test_loader) == 2, "test_loader should only contain two images"
     assert visualization_type in (
         "lines_and_colors",
@@ -46,13 +48,7 @@ def draw_one(
 
     # get transformed and untransformed images out of test_loader
     for batch in test_loader:
-        try:
-            transformed_image, _, path, bbox, theta = batch[:5]
-        except:
-            transformed_image = batch["image"]
-            path = batch["file_path"]
-            bbox = batch["bbox"]
-            theta = batch["theta"]
+        (transformed_image,), _, (path,), (bbox,), (theta,) = batch[:5]
 
         if len(transformed_image.shape) == 3:
             transformed_image = transformed_image.unsqueeze(0)
@@ -62,13 +58,8 @@ def draw_one(
         img_size = tuple(transformed_image.shape[-2:])
         pretransform_image = load_image(path)
 
-        if test_loader.crop_bbox:
+        if crop_bbox:
             pretransform_image = get_chip_from_img(pretransform_image, bbox, theta)
-
-        if test_loader.fliplr:
-            viewpoint = batch["viewpoint"]
-            if viewpoint in test_loader.fliplr_view:
-                pretransform_image = torch.from_numpy(np.fliplr(pretransform_image).copy())
 
         pretransform_image = np.array(transforms.Resize(img_size)(Image.fromarray(pretransform_image)))
         pretransform_images.append(pretransform_image)
@@ -82,6 +73,7 @@ def draw_one(
 
     # generate explanation image and return
     model.eval()
+    model.device = device
     pairx_img = explain(
         img_0,
         img_1,
