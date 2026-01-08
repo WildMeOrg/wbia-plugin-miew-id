@@ -72,7 +72,11 @@ def extract_outputs(net, data_loader, checkpoint=None, device="cpu"):
     # Load model checkpoint if provided
     if checkpoint:
         saved_state_dict = torch.load(checkpoint)
-        net.load_state_dict(saved_state_dict)
+        # Handle both new and legacy checkpoint formats
+        if isinstance(saved_state_dict, dict) and 'model_state_dict' in saved_state_dict:
+            net.load_state_dict(saved_state_dict['model_state_dict'])
+        else:
+            net.load_state_dict(saved_state_dict)
     
     net = net.to(device)
     net.eval()

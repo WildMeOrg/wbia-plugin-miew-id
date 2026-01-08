@@ -2,7 +2,7 @@ from wbia_miew_id.logging_utils import WandbContext
 from wbia_miew_id.etl import preprocess_data, print_intersect_stats, load_preprocessed_mapping, preprocess_dataset
 from wbia_miew_id.losses import fetch_loss
 from wbia_miew_id.schedulers import MiewIdScheduler
-from wbia_miew_id.helpers import get_config, write_config, update_bn
+from wbia_miew_id.helpers import get_config, write_config, update_bn, save_checkpoint, load_checkpoint
 from wbia_miew_id.metrics import AverageMeter, compute_calibration
 from wbia_miew_id.datasets import MiewIdDataset, get_train_transforms, get_valid_transforms
 from wbia_miew_id.models import ArcMarginProduct, ElasticArcFace, ArcFaceSubCenterDynamic, MiewIdNet
@@ -33,10 +33,8 @@ class Trainer:
         torch.cuda.manual_seed(seed)
         torch.backends.cudnn.deterministic = True
 
-    def run_fn(self, model, train_loader, valid_loader, criterion, optimizer, scheduler, device, checkpoint_dir, use_wandb=True, swa_model=None, swa_start=None, swa_scheduler=None):
-        best_score = 0
-        best_cmc = None
-        for epoch in range(self.config.engine.epochs):
+    def run_fn(self, model, train_loader, valid_loader, criterion, optimizer, scheduler, device, checkpoint_dir, use_wandb=True, swa_model=None, swa_start=None, swa_scheduler=None, start_epoch=0, best_score=0, best_cmc=None):
+        for epoch in range(start_epoch, self.config.engine.epochs):
             train_loss = train_fn(train_loader, model, criterion, optimizer, device, scheduler=scheduler, epoch=epoch, use_wandb=use_wandb, swa_model=swa_model, swa_start=swa_start, swa_scheduler=swa_scheduler)
 
             print("\nGetting metrics on validation set...")
@@ -57,6 +55,13 @@ class Trainer:
                 torch.save(model.state_dict(), f'{checkpoint_dir}/model_best.bin')
                 print('best model found for epoch {}'.format(epoch))
 
+            # Save checkpoint after each epoch for resumption
+            save_checkpoint(
+                checkpoint_dir, model, optimizer, scheduler, criterion,
+                epoch, best_score, best_cmc, config=self.config,
+                swa_model=swa_model, swa_scheduler=swa_scheduler
+            )
+
         if swa_model:
             print("Updating SWA batchnorm statistics...")
             update_bn(train_loader, swa_model, device=device)
@@ -64,11 +69,25 @@ class Trainer:
             
         return best_score, best_cmc, model
 
-    def run(self, finetune=False):
+    def run(self, finetune=False, resume_from=None):
         config = self.config
         checkpoint_dir = f"{config.checkpoint_dir}/{config.project_name}/{config.exp_name}"
         os.makedirs(checkpoint_dir, exist_ok=True)
         print('Checkpoints will be saved at: ', checkpoint_dir)
+
+        # Handle resume_from parameter
+        if resume_from is None and hasattr(config, 'resume_from'):
+            resume_from = config.resume_from
+        
+        # Auto-detect latest checkpoint if resume_from is 'auto'
+        if resume_from == 'auto':
+            latest_checkpoint = f'{checkpoint_dir}/checkpoint_latest.pth'
+            if os.path.exists(latest_checkpoint):
+                resume_from = latest_checkpoint
+                print(f'Auto-detected checkpoint: {resume_from}')
+            else:
+                resume_from = None
+                print('No checkpoint found for auto-resume, starting from scratch')
 
         config_path_out = f'{checkpoint_dir}/{config.exp_name}.yaml'
         config.data.test.checkpoint_path = f'{checkpoint_dir}/model_best.bin'
@@ -176,7 +195,7 @@ class Trainer:
 
         elif config.model_params.loss_module == 'arcface_subcenter_dynamic':
             if margins is None:
-                margins = [0.3] * n_classes
+                margins = [0.3] * n_train_classes
             criterion = ArcFaceSubCenterDynamic(
                     loss_fn=loss_fn,
                     embedding_dim=model.final_in_features, 
@@ -202,6 +221,18 @@ class Trainer:
             swa_start = None
 
         write_config(config, config_path_out)
+
+        # Initialize resumption variables
+        start_epoch = 0
+        best_score = 0
+        best_cmc = None
+
+        # Load checkpoint if resuming
+        if resume_from and os.path.exists(resume_from):
+            start_epoch, best_score, best_cmc = load_checkpoint(
+                resume_from, model, optimizer, scheduler, criterion,
+                device, swa_model, swa_scheduler
+            )
 
         if finetune:
             for param in model.parameters():
@@ -260,7 +291,8 @@ class Trainer:
         else:
             with WandbContext(config):
                 best_score, best_cmc, model = self.run_fn(model, train_loader, valid_loader, criterion, optimizer, scheduler, device, checkpoint_dir, use_wandb=config.engine.use_wandb,
-                                        swa_model=swa_model, swa_scheduler=swa_scheduler, swa_start=swa_start)
+                                        swa_model=swa_model, swa_scheduler=swa_scheduler, swa_start=swa_start,
+                                        start_epoch=start_epoch, best_score=best_score, best_cmc=best_cmc)
 
         return best_score
 
@@ -272,6 +304,12 @@ def parse_args():
         default='configs/default_config.yaml',
         help='Path to the YAML configuration file. Default: configs/default_config.yaml'
     )
+    parser.add_argument(
+        '--resume',
+        type=str,
+        default=None,
+        help='Path to checkpoint to resume from. Use "auto" to automatically find the latest checkpoint in the experiment directory.'
+    )
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -279,4 +317,4 @@ if __name__ == '__main__':
     config_path = args.config
     config = get_config(config_path)
     trainer = Trainer(config)
-    trainer.run()
+    trainer.run(resume_from=args.resume)
