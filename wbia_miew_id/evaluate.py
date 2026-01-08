@@ -3,7 +3,7 @@ from wbia_miew_id.logging_utils import WandbContext
 from wbia_miew_id.models import MiewIdNet
 from wbia_miew_id.etl import preprocess_data, print_basic_stats
 from wbia_miew_id.engine import eval_fn, group_eval_run
-from wbia_miew_id.helpers import get_config
+from wbia_miew_id.helpers import get_config, load_model_weights
 from wbia_miew_id.visualization import render_query_results
 from wbia_miew_id.metrics import precision_at_k
 
@@ -74,13 +74,7 @@ class Evaluator:
         model.to(device)
         
         if checkpoint_path:
-            weights = torch.load(checkpoint_path, map_location=device)
-            n_train_classes = 0
-            if model_params['n_classes'] != n_train_classes:
-                print(f"WARNING: Overriding n_classes in config ({model_params['n_classes']}) which is different from actual n_train_classes in the checkpoint -  ({n_train_classes}).")
-                model_params['n_classes'] = n_train_classes
-            model.load_state_dict(weights, strict=False)
-            print('loaded checkpoint from', checkpoint_path)
+            load_model_weights(checkpoint_path, model, device=device)
         
         return model
 
