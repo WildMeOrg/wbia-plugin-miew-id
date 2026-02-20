@@ -16,6 +16,7 @@ class Train(DictableClass):
     anno_path: str
     n_filter_min: int = 4
     n_subsample_max: int = None
+    exclude_min_filter_species: List = field(default_factory=list)
 
 @dataclass
 class Val(DictableClass):

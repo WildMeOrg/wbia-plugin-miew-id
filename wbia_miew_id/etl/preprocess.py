@@ -41,8 +41,14 @@ def filter_viewpoint_df(df, viewpoint_list):
     print('     ', len(df), 'annotations remain after filtering by viewpoint list', viewpoint_list)
     return df
 
-def filter_min_names_df(df, n_filter_min, filter_key='name_species'):
-    df = df.groupby(filter_key).filter(lambda g: len(g)>=n_filter_min)
+def filter_min_names_df(df, n_filter_min, filter_key='name_species', exclude_species=None):
+    if exclude_species:
+        mask = df['species'].isin(exclude_species)
+        df_excl = df[mask]
+        df_rest = df[~mask].groupby(filter_key).filter(lambda g: len(g) >= n_filter_min)
+        df = pd.concat([df_excl, df_rest])
+    else:
+        df = df.groupby(filter_key).filter(lambda g: len(g) >= n_filter_min)
     print('     ', len(df), 'annotations remain after filtering by min', n_filter_min, 'per', filter_key)
     return df
 
@@ -56,22 +62,22 @@ def convert_name_to_id(names):
     names_id = le.fit_transform(names)
     return names_id
 
-def filter_df(df, viewpoint_list, n_filter_min, n_subsample_max, filter_key='name_species'):
+def filter_df(df, viewpoint_list, n_filter_min, n_subsample_max, filter_key='name_species', exclude_species=None):
     if viewpoint_list:
         df = filter_viewpoint_df(df, viewpoint_list)
-    
+
     if n_filter_min:
-        df = filter_min_names_df(df, n_filter_min, filter_key=filter_key)
+        df = filter_min_names_df(df, n_filter_min, filter_key=filter_key, exclude_species=exclude_species)
 
     if not len(df):
         raise Exception("No samples remain after filtering.")
-        
+
     if n_subsample_max:
         df = subsample_max_df(df, n_subsample_max, filter_key=filter_key)
 
     return df
 
-def preprocess_data(anno_path, name_keys=['name'], convert_names_to_ids=True, viewpoint_list=None, n_filter_min=None, n_subsample_max=None, use_full_image_path=False, images_dir=None):
+def preprocess_data(anno_path, name_keys=['name'], convert_names_to_ids=True, viewpoint_list=None, n_filter_min=None, n_subsample_max=None, use_full_image_path=False, images_dir=None, exclude_min_filter_species=None):
 
     if anno_path.lower().endswith('json'):
         df = load_json_to_df(anno_path)
@@ -92,7 +98,7 @@ def preprocess_data(anno_path, name_keys=['name'], convert_names_to_ids=True, vi
 
     df['name_orig'] = df['name'].copy()
 
-    df = filter_df(df, viewpoint_list, n_filter_min, n_subsample_max, filter_key=filter_key)
+    df = filter_df(df, viewpoint_list, n_filter_min, n_subsample_max, filter_key=filter_key, exclude_species=exclude_min_filter_species)
 
     if convert_names_to_ids:
         names = df['name'].values

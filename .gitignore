@@ -17,3 +17,5 @@ wbia_miew_id/splits/
 wbia_miew_id/helpers/split/configs/config_*.yaml
 wbia_miew_id.egg*
 wbia_miew_id/examples/beluga_example_miewid/*
+wbia_miew_id/examples/extract_and_evaluate_whalesharks.ipynb
+wbia_miew_id/examples/whale.ipynb
