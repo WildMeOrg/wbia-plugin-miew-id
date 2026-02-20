@@ -26,6 +26,7 @@ data:
     anno_path: /mnt/space/space-home/wild-me/multi-species/splits/EDA-single-species-1/instances_train2023.json
     n_filter_min: 4
     n_subsample_max: null
+    exclude_min_filter_species: []
   val:
     anno_path: /mnt/space/space-home/wild-me/multi-species/splits/EDA-single-species-1/instances_val2023.json
     n_filter_min: 2

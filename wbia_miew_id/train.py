@@ -94,14 +94,15 @@ class Trainer:
 
         self.set_seed_torch(config.engine.seed)
 
-        df_train = preprocess_data(config.data.train.anno_path, 
+        df_train = preprocess_data(config.data.train.anno_path,
                                     name_keys=config.data.name_keys,
-                                    convert_names_to_ids=True, 
-                                    viewpoint_list=config.data.viewpoint_list, 
-                                    n_filter_min=config.data.train.n_filter_min, 
+                                    convert_names_to_ids=True,
+                                    viewpoint_list=config.data.viewpoint_list,
+                                    n_filter_min=config.data.train.n_filter_min,
                                     n_subsample_max=config.data.train.n_subsample_max,
                                     use_full_image_path=config.data.use_full_image_path,
-                                    images_dir=config.data.images_dir)
+                                    images_dir=config.data.images_dir,
+                                    exclude_min_filter_species=config.data.train.exclude_min_filter_species)
 
         df_val = preprocess_data(config.data.val.anno_path, 
                                   name_keys=config.data.name_keys,
