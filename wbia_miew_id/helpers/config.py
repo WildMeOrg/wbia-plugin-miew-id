@@ -91,6 +91,7 @@ class ModelParams(DictableClass):
     pretrained: bool
     n_classes: int
     k: int = 2
+    img_size: int = None
     
 @dataclass
 class TestParams():
@@ -121,13 +122,13 @@ def load_yaml(file_path: str) -> Dict:
     return config_dict
 
 def convert_config_dict(input_dict):
-    
+
     input_dict['data']['train'] = {
         'anno_path': input_dict['data'].pop('train_anno_path'),
         'n_filter_min': input_dict['data'].pop('train_n_filter_min'),
         'n_subsample_max': input_dict['data'].pop('train_n_subsample_max')
     }
-    
+
     input_dict['data']['val'] = {
         'anno_path': input_dict['data'].pop('val_anno_path'),
         'n_filter_min': input_dict['data'].pop('val_n_filter_min'),
@@ -140,7 +141,7 @@ def convert_config_dict(input_dict):
         'n_subsample_max': input_dict['data']['val']['anno_path'],
         'checkpoint_path': ''
     }
-    
+
 
     return input_dict
 

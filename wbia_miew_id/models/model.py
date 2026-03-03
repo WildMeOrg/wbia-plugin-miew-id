@@ -64,14 +64,23 @@ class MiewIdNet(nn.Module):
 
         self.model_name = model_name
 
-        self.backbone = timm.create_model(model_name, pretrained=pretrained)
+        # Pass img_size to timm for ViTs that need position embedding interpolation
+        timm_kwargs = {}
+        if kwargs.get('img_size'):
+            timm_kwargs['img_size'] = kwargs['img_size']
+        self.backbone = timm.create_model(model_name, pretrained=pretrained, **timm_kwargs)
         if model_name.startswith('efficientnetv2_rw'):
             final_in_features = self.backbone.classifier.in_features
-        if model_name.startswith('swinv2'):
+        elif model_name.startswith('swinv2'):
             final_in_features = self.backbone.norm.normalized_shape[0]
+        elif hasattr(self.backbone, 'num_features'):
+            final_in_features = self.backbone.num_features
+        else:
+            raise ValueError(f"Cannot determine embedding dim for model: {model_name}")
 
         self.final_in_features = final_in_features
-        
+        self._is_vit = hasattr(self.backbone, 'cls_token')
+
         self.backbone.classifier = nn.Identity()
         self.backbone.global_pool = nn.Identity()
         
@@ -101,11 +110,16 @@ class MiewIdNet(nn.Module):
     def extract_feat(self, x):
         batch_size = x.shape[0]
         x = self.backbone.forward_features(x)
-        if self.model_name.startswith('swinv2'):
-            x = x.permute(0, 3, 1, 2)
 
-        x = self.pooling(x).view(batch_size, -1)
-        x = self.bn(x)
+        if self._is_vit:
+            # ViT output: [B, seq_len, dim] → extract cls token
+            x = x[:, 0, :]
+            x = self.bn(x)
+        else:
+            if self.model_name.startswith('swinv2'):
+                x = x.permute(0, 3, 1, 2)
+            x = self.pooling(x).view(batch_size, -1)
+            x = self.bn(x)
         if self.use_fc:
             x1 = self.dropout(x)
             x1 = self.bn(x1)

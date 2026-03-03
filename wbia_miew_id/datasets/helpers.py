@@ -1,12 +1,12 @@
 ## Functions for handling rotated bounding boxes
 
 import numpy as np
-import cv2
+from PIL import Image as PILImage
 import matplotlib.pyplot as plt
 
+
 def load_image(image_path):
-    image = cv2.imread(image_path)
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = np.array(PILImage.open(image_path).convert('RGB'))
     return image
 
 def imshow(img):
@@ -18,7 +18,7 @@ def imshow(img):
 def show_image(image_path):
     image = load_image(image_path)
     imshow(image)
-    
+
 def rotate_box(x1,y1,x2,y2,theta):
     xm = (x1 + x2) // 2
     ym = (y1 + y2) // 2
@@ -39,15 +39,17 @@ def rotate_box(x1,y1,x2,y2,theta):
     return RA
 
 def crop_rect(img, rect):
+    """Crop a rotated rectangle from an image using PIL (no OpenCV)."""
     center, size, angle = rect[0], rect[1], rect[2]
     center, size = tuple(map(int, center)), tuple(map(int, size))
 
     height, width = img.shape[0], img.shape[1]
-    
+
     diag_len = int(np.sqrt(height * height + width * width))
     new_width = diag_len
     new_height = diag_len
 
+    # Create white canvas and paste image centered
     blank_canvas = np.ones((new_height, new_width, 3), dtype=img.dtype) * 255
 
     x_offset = (new_width - width) // 2
@@ -55,17 +57,52 @@ def crop_rect(img, rect):
 
     blank_canvas[y_offset:y_offset+height, x_offset:x_offset+width] = img
 
+    # Convert to PIL for rotation
+    pil_canvas = PILImage.fromarray(blank_canvas)
+
+    # PIL rotate uses degrees, counter-clockwise positive (same as cv2.getRotationMatrix2D)
+    angle_deg = np.rad2deg(angle)
     new_center_x = new_width // 2
     new_center_y = new_height // 2
 
-    M = cv2.getRotationMatrix2D((new_center_x, new_center_y), np.rad2deg(angle), 1)
+    # Rotate around center of canvas
+    pil_rotated = pil_canvas.rotate(angle_deg, resample=PILImage.BILINEAR, center=(new_center_x, new_center_y), fillcolor=(255, 255, 255))
 
-    img_rot = cv2.warpAffine(blank_canvas, M, (new_width, new_height), flags=cv2.INTER_LINEAR, 
-                             borderMode=cv2.BORDER_CONSTANT, borderValue=(255,255,255))
+    img_rot = np.array(pil_rotated)
 
-    new_center = np.dot(M[:,:2], np.array([center[0], center[1]]) + np.array([x_offset, y_offset])) + M[:,2]
+    # Compute where the crop center moved to after rotation
+    cos_a = np.cos(np.deg2rad(angle_deg))
+    sin_a = np.sin(np.deg2rad(angle_deg))
+    # Point relative to rotation center
+    px = center[0] + x_offset - new_center_x
+    py = center[1] + y_offset - new_center_y
+    # Apply rotation (counter-clockwise)
+    new_cx = cos_a * px + sin_a * py + new_center_x
+    new_cy = -sin_a * px + cos_a * py + new_center_y
 
-    img_crop = cv2.getRectSubPix(img_rot, size, new_center)
+    # Crop sub-rectangle centered at (new_cx, new_cy) with given size
+    crop_w, crop_h = size
+    x1 = int(new_cx - crop_w / 2)
+    y1 = int(new_cy - crop_h / 2)
+    x2 = x1 + crop_w
+    y2 = y1 + crop_h
+
+    # Clamp to image bounds
+    x1c = max(0, x1)
+    y1c = max(0, y1)
+    x2c = min(new_width, x2)
+    y2c = min(new_height, y2)
+
+    img_crop = img_rot[y1c:y2c, x1c:x2c]
+
+    # Pad if crop extends beyond canvas
+    if img_crop.shape[0] != crop_h or img_crop.shape[1] != crop_w:
+        padded = np.ones((crop_h, crop_w, 3), dtype=img.dtype) * 255
+        paste_x = x1c - x1
+        paste_y = y1c - y1
+        padded[paste_y:paste_y+img_crop.shape[0], paste_x:paste_x+img_crop.shape[1]] = img_crop
+        img_crop = padded
+
     return img_crop, img_rot
 
 
@@ -75,6 +112,15 @@ def get_chip_from_img(img, bbox, theta):
     y2 = y1 + h
     xm = (x1 + x2) // 2
     ym = (y1 + y2) // 2
+
+    # Treat NaN/None/invalid theta as zero rotation
+    try:
+        theta_valid = float(theta)
+        if theta_valid != theta_valid:  # NaN check
+            theta_valid = 0
+    except (TypeError, ValueError):
+        theta_valid = 0
+    theta = theta_valid
 
     # Do a faster, regular crop if theta is negligible
     if abs(theta) < 0.1:

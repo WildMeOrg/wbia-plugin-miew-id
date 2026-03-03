@@ -16,7 +16,10 @@ def load_json_to_df(anno_path):
     dfa = pd.DataFrame(data['annotations'])
     dfi = pd.DataFrame(data['images'])
 
-    dfi = dfi.drop_duplicates(subset=['uuid'])
+    if 'uuid' in dfi.columns:
+        dfi = dfi.drop_duplicates(subset=['uuid'])
+    else:
+        dfi = dfi.drop_duplicates(subset=['id'])
 
     merge_on_uuid = 'image_uuid' in dfa.columns and 'uuid' in dfi.columns
     if merge_on_uuid:
@@ -53,7 +56,10 @@ def filter_min_names_df(df, n_filter_min, filter_key='name_species', exclude_spe
     return df
 
 def subsample_max_df(df, n_subsample_max, filter_key='name_species'):
-    df = df.groupby(filter_key, as_index=False).apply(lambda g: g.sample(frac=1, random_state=0).head(n_subsample_max)).droplevel(level=0)
+    sampled = []
+    for key, group in df.groupby(filter_key):
+        sampled.append(group.sample(frac=1, random_state=0).head(n_subsample_max))
+    df = pd.concat(sampled, ignore_index=True)
     print('     ', len(df), 'annotations remain after subsampling by max', n_subsample_max, 'per', filter_key)
     return df
 
@@ -105,7 +111,9 @@ def preprocess_data(anno_path, name_keys=['name'], convert_names_to_ids=True, vi
         names_id = convert_name_to_id(names)
         df['name'] = names_id
 
-    if not use_full_image_path:
+    if use_full_image_path:
+        df['file_path'] = df['file_name']
+    else:
         df['file_path'] = df['file_name'].apply(lambda x: os.path.join(images_dir, x))
 
     df = df.reset_index(drop=True)

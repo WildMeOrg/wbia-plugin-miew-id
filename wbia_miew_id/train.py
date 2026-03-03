@@ -13,6 +13,7 @@ from torch.optim.swa_utils import AveragedModel, SWALR
 import torch
 import random
 import numpy as np
+
 import os
 import argparse
 import matplotlib.pyplot as plt
@@ -311,6 +312,12 @@ def parse_args():
         default=None,
         help='Path to checkpoint to resume from. Use "auto" to automatically find the latest checkpoint in the experiment directory.'
     )
+    parser.add_argument(
+        '--finetune',
+        action='store_true',
+        default=False,
+        help='Enable two-stage fine-tuning: freeze backbone for 3 epochs (head only), then unfreeze all.'
+    )
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -318,4 +325,4 @@ if __name__ == '__main__':
     config_path = args.config
     config = get_config(config_path)
     trainer = Trainer(config)
-    trainer.run(resume_from=args.resume)
+    trainer.run(finetune=args.finetune, resume_from=args.resume)
