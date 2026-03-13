@@ -16,6 +16,9 @@ from scipy.spatial import distance_matrix
 import pandas as pd
 import json
 
+import threading
+import logging
+
 import tqdm
 
 from wbia_miew_id.helpers import get_config, read_json
@@ -85,6 +88,120 @@ def read_config_and_load_model(species):
 
 
 GLOBAL_EMBEDDING_CACHE = {}
+
+# ---------------------------------------------------------------------------
+# PairX re-ranking: model cache + thread safety
+# ---------------------------------------------------------------------------
+# PairX modifies model state (hooks, zennit canonization, backward passes).
+# A per-species lock serializes PairX scoring while allowing concurrent
+# MiewID embedding computation (which uses torch.no_grad and is read-only).
+
+_PAIRX_MODEL_CACHE = {}     # species -> (model, config, device)
+_PAIRX_MODEL_LOCKS = {}     # species -> threading.Lock
+_PAIRX_CACHE_LOCK = threading.Lock()
+
+_pairx_logger = logging.getLogger('wbia_miew_id.pairx_rerank')
+
+
+def _get_pairx_model(species):
+    """Get or load a model for PairX re-ranking.  Cached per species."""
+    with _PAIRX_CACHE_LOCK:
+        if species not in _PAIRX_MODEL_CACHE:
+            model, mconfig, _ = read_config_and_load_model(species)
+            device = next(model.parameters()).device
+            model.eval()
+            # MiewIdNet has no .device property; set it for PairX compat
+            model.device = device
+            _PAIRX_MODEL_CACHE[species] = (model, mconfig, device)
+            _PAIRX_MODEL_LOCKS[species] = threading.Lock()
+    return _PAIRX_MODEL_CACHE[species], _PAIRX_MODEL_LOCKS[species]
+
+
+def _prepare_pairx_image(ibs, aid, config, device):
+    """Load and transform one annotation into a tensor for PairX."""
+    test_loader, _ = _load_data(ibs, [aid], config, multithread=False,
+                                batch_size=1)
+    batch = next(iter(test_loader))
+    img_tensor = batch[0]  # (1, C, H, W)
+    if len(img_tensor.shape) == 3:
+        img_tensor = img_tensor.unsqueeze(0)
+    img_tensor = img_tensor.to(device).float()
+    img_tensor.requires_grad_(True)
+    return img_tensor
+
+
+def _pairx_rerank(ibs, qaid, daids, score_dict, config):
+    """Re-rank top-k candidates using PairX spatial correspondence metrics.
+
+    Thread-safe: acquires a per-species lock around all PairX scoring so
+    that hook registration, zennit canonization, and backward passes on
+    the shared model don't collide across Gunicorn threads.
+    """
+    from wbia_miew_id.visualization.pairx.scoring import (
+        pairx_rerank_score, normalize_pairx_score,
+    )
+    from wbia_miew_id.visualization.pairx.core import choose_canonizer
+
+    shortlist_k = config.get('pairx_shortlist_k', 20)
+    alpha = config.get('pairx_alpha', 0.8)
+    layer_key = config.get('pairx_layer_key', 'backbone.blocks.5')
+    sigmoid_k = config.get('pairx_sigmoid_k', 0.1)
+    sigmoid_x0 = config.get('pairx_sigmoid_x0', 0.5)
+
+    # Sort by MiewID score descending, take top-k
+    sorted_daids = sorted(
+        daids, key=lambda d: score_dict.get(d, 0), reverse=True
+    )
+    shortlist = sorted_daids[:shortlist_k]
+
+    species = ibs.get_annot_species_texts(qaid)
+    (model, mconfig, device), model_lock = _get_pairx_model(species)
+
+    # Fail fast if backbone isn't supported by PairX's canonizer
+    try:
+        choose_canonizer(model)
+    except Exception:
+        _pairx_logger.warning(
+            'PairX re-ranking skipped: unsupported backbone %s',
+            type(model).__name__,
+        )
+        return score_dict
+
+    # Prepare image tensors outside the lock (I/O + DB reads)
+    query_img = _prepare_pairx_image(ibs, qaid, mconfig, device)
+    db_imgs = {daid: _prepare_pairx_image(ibs, daid, mconfig, device)
+               for daid in shortlist}
+
+    # Hold the lock only for model forward/backward passes
+    with model_lock:
+        for daid in shortlist:
+            db_img = db_imgs[daid]
+
+            # Zero gradients to prevent accumulation across pairs
+            model.zero_grad()
+            if query_img.grad is not None:
+                query_img.grad = None
+            if db_img.grad is not None:
+                db_img.grad = None
+
+            raw_pairx = pairx_rerank_score(
+                device, query_img, db_img, model, layer_key
+            )
+
+            if raw_pairx is None:
+                # PairX failed for this pair; keep MiewID score (scaled)
+                score_dict[daid] = alpha * score_dict[daid]
+                continue
+
+            pairx_norm = normalize_pairx_score(raw_pairx, sigmoid_k, sigmoid_x0)
+            miewid_score = score_dict[daid]
+            score_dict[daid] = alpha * miewid_score + (1 - alpha) * pairx_norm
+
+    # Scale non-shortlisted scores (same pattern as Hybrid plugin)
+    for daid in sorted_daids[shortlist_k:]:
+        score_dict[daid] = alpha * score_dict.get(daid, 0)
+
+    return score_dict
 
 
 @register_ibs_method
@@ -215,6 +332,12 @@ class MiewIdConfig(dt.Config):  # NOQA
         return [
             ut.ParamInfo('config_path', None),
             ut.ParamInfo('use_knn', True, hideif=True),
+            ut.ParamInfo('pairx_rerank', False),
+            ut.ParamInfo('pairx_shortlist_k', 20),
+            ut.ParamInfo('pairx_alpha', 0.8),
+            ut.ParamInfo('pairx_layer_key', 'backbone.blocks.5'),
+            ut.ParamInfo('pairx_sigmoid_k', 10.0),
+            ut.ParamInfo('pairx_sigmoid_x0', 0.5),
         ]
 
 
@@ -395,6 +518,12 @@ def wbia_plugin_miew_id(depc, qaid_list, daid_list, config):
             qaid_score_dict[qaid] = {}
             for daid, miew_id_annot_distance in zip(daids, miew_id_annot_distances):
                 qaid_score_dict[qaid][daid] = distance_to_score(miew_id_annot_distance)
+
+        # Optional PairX re-ranking (engaged via config flag from Wildbook)
+        if config.get('pairx_rerank', False):
+            qaid_score_dict[qaid] = _pairx_rerank(
+                ibs, qaid, daids, qaid_score_dict[qaid], config
+            )
 
     for qaid, daid in zip(qaid_list, daid_list):
         if qaid == daid:
