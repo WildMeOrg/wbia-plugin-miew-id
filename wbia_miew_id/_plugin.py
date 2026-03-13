@@ -145,8 +145,13 @@ def _pairx_rerank(ibs, qaid, daids, score_dict, config):
     shortlist_k = config.get('pairx_shortlist_k', 20)
     alpha = config.get('pairx_alpha', 0.8)
     layer_key = config.get('pairx_layer_key', 'backbone.blocks.5')
-    sigmoid_k = config.get('pairx_sigmoid_k', 0.1)
+    sigmoid_k = config.get('pairx_sigmoid_k', 10.0)
     sigmoid_x0 = config.get('pairx_sigmoid_x0', 0.5)
+
+    _pairx_logger.info(
+        'PairX re-ranking qaid=%s: shortlist_k=%d, alpha=%.2f, layer=%s',
+        qaid, shortlist_k, alpha, layer_key,
+    )
 
     # Sort by MiewID score descending, take top-k
     sorted_daids = sorted(
@@ -196,6 +201,8 @@ def _pairx_rerank(ibs, qaid, daids, score_dict, config):
             pairx_norm = normalize_pairx_score(raw_pairx, sigmoid_k, sigmoid_x0)
             miewid_score = score_dict[daid]
             score_dict[daid] = alpha * miewid_score + (1 - alpha) * pairx_norm
+
+    _pairx_logger.info('PairX re-ranking complete for qaid=%s', qaid)
 
     # Scale non-shortlisted scores (same pattern as Hybrid plugin)
     for daid in sorted_daids[shortlist_k:]:
