@@ -6,6 +6,7 @@ from wbia_miew_id.helpers import get_config, write_config, update_bn, save_check
 from wbia_miew_id.metrics import AverageMeter, compute_calibration
 from wbia_miew_id.datasets import MiewIdDataset, get_train_transforms, get_valid_transforms
 from wbia_miew_id.models import ArcMarginProduct, ElasticArcFace, ArcFaceSubCenterDynamic, MiewIdNet
+from wbia_miew_id.losses.pgr_loss import PGRMemoryBank
 from wbia_miew_id.engine import train_fn, eval_fn, group_eval_fn
 
 
@@ -34,9 +35,9 @@ class Trainer:
         torch.cuda.manual_seed(seed)
         torch.backends.cudnn.deterministic = True
 
-    def run_fn(self, model, train_loader, valid_loader, criterion, optimizer, scheduler, device, checkpoint_dir, use_wandb=True, swa_model=None, swa_start=None, swa_scheduler=None, start_epoch=0, best_score=0, best_cmc=None):
+    def run_fn(self, model, train_loader, valid_loader, criterion, optimizer, scheduler, device, checkpoint_dir, use_wandb=True, swa_model=None, swa_start=None, swa_scheduler=None, start_epoch=0, best_score=0, best_cmc=None, pgr_bank=None, pgr_weight=0.1):
         for epoch in range(start_epoch, self.config.engine.epochs):
-            train_loss = train_fn(train_loader, model, criterion, optimizer, device, scheduler=scheduler, epoch=epoch, use_wandb=use_wandb, swa_model=swa_model, swa_start=swa_start, swa_scheduler=swa_scheduler)
+            train_loss = train_fn(train_loader, model, criterion, optimizer, device, scheduler=scheduler, epoch=epoch, use_wandb=use_wandb, swa_model=swa_model, swa_start=swa_start, swa_scheduler=swa_scheduler, pgr_bank=pgr_bank, pgr_weight=pgr_weight)
 
             print("\nGetting metrics on validation set...")
 
@@ -222,6 +223,23 @@ class Trainer:
             swa_scheduler = None
             swa_start = None
 
+        # Initialize PGR memory bank if enabled
+        pgr_bank = None
+        pgr_weight = 0.0
+        if config.pgr_params and config.pgr_params.enabled:
+            num_train_samples = len(df_train)
+            pgr_bank = PGRMemoryBank(
+                num_samples=num_train_samples,
+                embedding_dim=model.final_in_features,
+                num_classes=n_train_classes,
+                momentum=config.pgr_params.momentum,
+                temperature=config.pgr_params.temperature,
+            )
+            pgr_bank.init_labels(df_train['name'].values)
+            pgr_bank.to(device)
+            pgr_weight = config.pgr_params.weight
+            print(f'PGR memory bank initialized: {num_train_samples} samples, weight={pgr_weight}')
+
         write_config(config, config_path_out)
 
         # Initialize resumption variables
@@ -262,7 +280,7 @@ class Trainer:
             print('Finetuning Stage 1')
             with WandbContext(config):
                 best_score, best_cmc, model = self.run_fn(model, train_loader, valid_loader, criterion, optimizer, scheduler, device, checkpoint_dir, use_wandb=config.engine.use_wandb,
-                                        swa_model=swa_model, swa_scheduler=swa_scheduler, swa_start=swa_start)
+                                        swa_model=swa_model, swa_scheduler=swa_scheduler, swa_start=swa_start, pgr_bank=pgr_bank, pgr_weight=pgr_weight)
 
                 print('Finetuning Stage 2')
                 for param in model.parameters():
@@ -287,14 +305,15 @@ class Trainer:
         
 
                 best_score, best_cmc, model = self.run_fn(model, train_loader, valid_loader, criterion, optimizer, scheduler, device, checkpoint_dir, use_wandb=config.engine.use_wandb,
-                                        swa_model=swa_model, swa_scheduler=swa_scheduler, swa_start=swa_start)
+                                        swa_model=swa_model, swa_scheduler=swa_scheduler, swa_start=swa_start, pgr_bank=pgr_bank, pgr_weight=pgr_weight)
 
             return best_score
         else:
             with WandbContext(config):
                 best_score, best_cmc, model = self.run_fn(model, train_loader, valid_loader, criterion, optimizer, scheduler, device, checkpoint_dir, use_wandb=config.engine.use_wandb,
                                         swa_model=swa_model, swa_scheduler=swa_scheduler, swa_start=swa_start,
-                                        start_epoch=start_epoch, best_score=best_score, best_cmc=best_cmc)
+                                        start_epoch=start_epoch, best_score=best_score, best_cmc=best_cmc,
+                                        pgr_bank=pgr_bank, pgr_weight=pgr_weight)
 
         return best_score
 

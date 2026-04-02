@@ -42,6 +42,6 @@ class MiewIdDataset(Dataset):
                 image = torch.from_numpy(np.fliplr(image).copy())
 
         
-        return {"image": image, "label":torch.tensor(row['name']), 
-                "image_idx": self.csv.index[index], "file_path": image_path, "bbox": torch.Tensor(bbox),
+        return {"image": image, "label":torch.tensor(row['name']),
+                "image_idx": self.csv.index[index], "index": index, "file_path": image_path, "bbox": torch.Tensor(bbox),
                 'theta': theta, 'species': species}

@@ -52,6 +52,13 @@ class Data(DictableClass):
     use_full_image_path: bool = False
 
 @dataclass
+class PGRParams(DictableClass):
+    enabled: bool = False
+    momentum: float = 0.2
+    temperature: float = 0.07
+    weight: float = 0.1
+
+@dataclass
 class Engine(DictableClass):
     train_batch_size: int
     valid_batch_size: int
@@ -62,6 +69,8 @@ class Engine(DictableClass):
     num_workers: int = 0
     loss_module: str = 'softmax'
     use_swa: bool = False
+    lp_ft_epochs: int = 0
+    backbone_lr_mult: float = 0.1
 
 @dataclass
 class SWAParams(DictableClass):
@@ -111,6 +120,7 @@ class Config(DictableClass):
     model_params: ModelParams
     test: TestParams
     swa_params: SWAParams
+    pgr_params: PGRParams = None
 
 
 
@@ -157,6 +167,9 @@ def get_config(file_path: str) -> Config:
     if not config_dict.get('swa_params', False):
         config_dict['swa_params'] = dict(SWAParams())
 
+    if not config_dict.get('pgr_params', False):
+        config_dict['pgr_params'] = dict(PGRParams())
+
     if not config_dict['data'].get('preprocess_images', False) or isinstance(config_dict['data']['preprocess_images'], bool):
         config_dict['data']['preprocess_images'] = dict(PreprocessImages())
 
@@ -167,6 +180,7 @@ def get_config(file_path: str) -> Config:
     config_dict['data'].preprocess_images = PreprocessImages(**config_dict['data'].preprocess_images)
     config_dict['engine'] = Engine(**config_dict['engine'])
     config_dict['swa_params'] = SWAParams(**config_dict['swa_params'])
+    config_dict['pgr_params'] = PGRParams(**config_dict['pgr_params'])
     config_dict['scheduler_params'] = SchedulerParams(**config_dict['scheduler_params'])
     config_dict['model_params'] = ModelParams(**config_dict['model_params'])
     config_dict['test'] = TestParams(**config_dict['test'])
