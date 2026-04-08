@@ -70,6 +70,8 @@ class Evaluator:
 
     @staticmethod
     def load_model(device, model_params, checkpoint_path):
+        if checkpoint_path:
+            model_params = {**model_params, 'pretrained': False}
         model = MiewIdNet(**model_params)
         model.to(device)
         

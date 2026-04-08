@@ -5,7 +5,10 @@ from wbia_miew_id.helpers import load_model_weights
 
 def get_model(cfg, checkpoint_path=None, use_gpu=True):
 
-    model = MiewIdNet(**dict(cfg.model_params))
+    params = dict(cfg.model_params)
+    if checkpoint_path:
+        params['pretrained'] = False
+    model = MiewIdNet(**params)
 
     if use_gpu:
         device = torch.device("cuda")
